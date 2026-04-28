@@ -6,6 +6,8 @@ import Voices from "./pages/Voices";
 import Channels from "./pages/Channels";
 import Analytics from "./pages/Analytics";
 import Topics from "./pages/Topics";
+import ReviewQueue from "./pages/ReviewQueue";
+import Shorts from "./pages/Shorts";
 import Sidebar from "./components/Sidebar";
 
 export default function App() {
@@ -35,6 +37,8 @@ export default function App() {
         {activeTab === "channels"   && <Channels setActiveTab={setActiveTab} />}
         {activeTab === "analytics"  && <Analytics />}
         {activeTab === "topics"     && <Topics />}
+        {activeTab === "review"     && <ReviewQueue />}
+        {activeTab === "shorts"     && <Shorts />}
       </main>
     </div>
   );

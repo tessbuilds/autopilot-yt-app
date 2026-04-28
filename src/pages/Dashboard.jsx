@@ -5,16 +5,34 @@ import JobDetailModal from "../components/JobDetailModal";
 
 // ── Stage metadata ────────────────────────────────────────────────────
 const STAGE_META = {
-  queued:       { label: "Queued",       color: "#6b7280", icon: "⏳" },
-  script_done:  { label: "Script Ready", color: "#3b82f6", icon: "✍️" },
-  voice_done:   { label: "Voice Ready",  color: "#8b5cf6", icon: "🎙️" },
-  visuals_done: { label: "Visuals Done", color: "#f59e0b", icon: "🎨" },
-  assembled:    { label: "Assembled",    color: "#10b981", icon: "🎬" },
-  published:    { label: "Published",    color: "#10b981", icon: "✅" },
-  failed:       { label: "Failed",       color: "#ef4444", icon: "❌" },
+  queued:           { label: "Queued",           color: "#6b7280", icon: "⏳" },
+  script_done:      { label: "Script Ready",     color: "#3b82f6", icon: "✍️" },
+  voice_generating: { label: "Voice Generating", color: "#6366f1", icon: "🎙️" },
+  voice_done:       { label: "Voice Ready",      color: "#8b5cf6", icon: "🎧" },
+  visuals_done:     { label: "Visuals Done",     color: "#f59e0b", icon: "🎨" },
+  assembly_queued:  { label: "Assembly Queued",  color: "#ec4899", icon: "🎬" },
+  assembled:        { label: "Assembled",        color: "#10b981", icon: "✅" },
+  published:        { label: "Published",        color: "#10b981", icon: "🚀" },
+  failed:           { label: "Failed",           color: "#ef4444", icon: "❌" },
 };
 
-const STAGE_ORDER = ["queued","script_done","voice_done","visuals_done","assembled","published"];
+const STAGE_ORDER = ["queued","script_done","voice_generating","voice_done","visuals_done","assembly_queued","assembled","published"];
+
+async function apiFetchJson(path, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, options);
+  let data = {};
+  try {
+    data = await res.json();
+  } catch {
+    data = {};
+  }
+
+  if (!res.ok) {
+    throw new Error(data.error || data.message || `Request failed: ${res.status}`);
+  }
+
+  return data;
+}
 
 function stageProgress(stage) {
   const idx = STAGE_ORDER.indexOf(stage);
@@ -131,22 +149,23 @@ export default function Dashboard({ setActiveTab }) {
   const [jobs,        setJobs]        = useState([]);
   const [topics,      setTopics]      = useState([]);
   const [loading,     setLoading]     = useState(true);
+  const [error,       setError]       = useState("");
   const [lastRefresh, setLastRefresh] = useState(null);
   const [selectedJob, setSelectedJob] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
-      const [jobsRes, topicsRes] = await Promise.all([
-        fetch(`${API_BASE}/api/autopilot/jobs`,                         { headers: { "x-app-key": API_KEY } }),
-        fetch(`${API_BASE}/api/autopilot/topics?status=pending_review`, { headers: { "x-app-key": API_KEY } }),
+      setError("");
+      const [jobsData, topicsData] = await Promise.all([
+        apiFetchJson(`/api/autopilot/jobs`,                         { headers: { "x-app-key": API_KEY } }),
+        apiFetchJson(`/api/autopilot/topics?status=pending_review`, { headers: { "x-app-key": API_KEY } }),
       ]);
-      const jobsData   = await jobsRes.json();
-      const topicsData = await topicsRes.json();
       setJobs(jobsData.jobs     || []);
       setTopics(topicsData.topics || []);
       setLastRefresh(new Date());
     } catch (e) {
       console.error("Dashboard fetch failed:", e);
+      setError(e.message || "Dashboard fetch failed.");
     } finally {
       setLoading(false);
     }
@@ -198,6 +217,16 @@ export default function Dashboard({ setActiveTab }) {
           <Button onClick={() => setActiveTab("create")}>＋ New Video</Button>
         </div>
       </div>
+
+      {error && (
+        <div style={{
+          marginBottom: 20, padding: "12px 14px",
+          background: "#1a0d12", border: "1px solid #5b1d2b",
+          borderRadius: 12, color: "#fca5a5", fontSize: 13,
+        }}>
+          {error}
+        </div>
+      )}
 
       {/* Stats row */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 24 }}>

@@ -1,30 +1,38 @@
 // ── Shared constants ──────────────────────────────────────────────
 
-export const API_BASE = "https://dbz5w0lclb.execute-api.us-east-1.amazonaws.com";
-export const API_KEY  = "ap-prod-2026";
+export const API_BASE = import.meta.env.VITE_API_BASE || "";
+export const API_KEY  = import.meta.env.VITE_API_KEY || "";
+
+// Note: when Pexels requests are made directly from the browser, the key is still visible to users.
+// This removes committed secrets from source, but a backend proxy is safer long-term.
+export const PEXELS_API_KEY = import.meta.env.VITE_PEXELS_API_KEY || "";
 
 export const CHANNELS = [
   { id: "ch_001", name: "True Crime Daily",  niche: "True Crime",  avatar: "🔍", videos: 312, subs: "284K", revenue: 1840, status: "live",     nextPublish: "2h",  voice: "Ava",    schedule: "3x/week" },
   { id: "ch_002", name: "Mind Unlocked",     niche: "Psychology",  avatar: "🧠", videos: 187, subs: "91K",  revenue: 620,  status: "live",     nextPublish: "5h",  voice: "Marcus", schedule: "2x/week" },
   { id: "ch_003", name: "Earth Unseen",      niche: "Nature Docs", avatar: "🌍", videos: 94,  subs: "42K",  revenue: 310,  status: "paused",   nextPublish: null,  voice: "Sofia",  schedule: "1x/week" },
   { id: "ch_004", name: "Finance Decoded",   niche: "Finance",     avatar: "📈", videos: 56,  subs: "18K",  revenue: 180,  status: "building", nextPublish: null,  voice: "Ava",    schedule: "2x/week" },
+  { id: "ch_005", name: "Shorts — Facts That Hit Different", niche: "Finance Facts", avatar: "⚡", videos: 0, subs: "0",   revenue: 0,    status: "live",     nextPublish: null,  voice: "Charlie", schedule: "daily" },
 ];
 
-export const VOICES = [
-  { id: "v_001", name: "Ava",    accent: "American",  style: "Calm narrator",   elevenId: "EXAVITQu4vr4xnSDxMaL", active: true,  samples: 3 },
-  { id: "v_002", name: "Marcus", accent: "British",   style: "Authoritative",   elevenId: "VR6AewLTigWG4xSOukaG", active: false, samples: 2 },
-  { id: "v_003", name: "Sofia",  accent: "Neutral",   style: "Warm & engaging", elevenId: "pNInz6obpgDQGcFmaJgB", active: false, samples: 4 },
-];
+export const VOICES = {
+  ch_001: { id: "VR6AewLTigWG4xSOukaG", name: "Arnold (True Crime)" },
+  ch_002: { id: "TX3LPaxmHKxFdv7VOQHJ", name: "Liam (Mind Unlocked)" },
+  ch_003: { id: "pNInz6obpgDQGcFmaJgB", name: "Rachel (Earth Unseen)" },
+  ch_004: { id: "onwK4e9ZLuTAKqWW03F9", name: "Daniel (Finance)" },
+  ch_005: { id: "IKne3meq5aSn9XLyUdCD", name: "Charlie (Shorts)" },
+};
 
 export const PIPELINE_STAGES = {
-  queued:     { color: "#4b5563", label: "Queued",     icon: "⏳", order: 0 },
-  scripting:  { color: "#8b5cf6", label: "Scripting",  icon: "✍️",  order: 1 },
-  voiceover:  { color: "#3b82f6", label: "Voiceover",  icon: "🎙️", order: 2 },
-  visuals:    { color: "#f59e0b", label: "Visuals",    icon: "🎨", order: 3 },
-  rendering:  { color: "#ec4899", label: "Rendering",  icon: "🎬", order: 4 },
-  publishing: { color: "#10b981", label: "Publishing", icon: "🚀", order: 5 },
-  done:       { color: "#6b7280", label: "Published",  icon: "✅", order: 6 },
-  failed:     { color: "#ef4444", label: "Failed",     icon: "❌", order: -1 },
+  queued:           { color: "#4b5563", label: "Queued",           icon: "⏳", order: 0 },
+  script_done:      { color: "#8b5cf6", label: "Script Ready",     icon: "✍️", order: 1 },
+  voice_generating: { color: "#3b82f6", label: "Voice Generating", icon: "🎙️", order: 2 },
+  voice_done:       { color: "#6366f1", label: "Voice Ready",      icon: "🎧", order: 3 },
+  visuals_done:     { color: "#f59e0b", label: "Visuals Ready",    icon: "🎨", order: 4 },
+  assembly_queued:  { color: "#ec4899", label: "Assembly Queued",  icon: "🎬", order: 5 },
+  assembled:        { color: "#10b981", label: "Assembled",        icon: "✅", order: 6 },
+  published:        { color: "#10b981", label: "Published",        icon: "🚀", order: 7 },
+  failed:           { color: "#ef4444", label: "Failed",           icon: "❌", order: -1 },
 };
 
 export const QUEUE = [

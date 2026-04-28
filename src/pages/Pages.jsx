@@ -81,9 +81,9 @@ export function Voices() {
     <div className="fade-in" style={{ maxWidth:640 }}>
       <PageHeader title="Voice Library" subtitle="Cloned voices via ElevenLabs · assign per channel" />
       <div style={{ display:"flex", flexDirection:"column", gap:14, marginBottom:24 }}>
-        {VOICES.map(v => (
+        {Object.entries(VOICES).map(([chId, v]) => (
           <div key={v.id} style={{
-            background:"#08081e", border:`1px solid ${v.active ? "#2d1b6e" : "#12122a"}`,
+            background:"#08081e", border:"1px solid #12122a",
             borderRadius:14, padding:"20px 24px",
           }}>
             <div style={{ display:"flex", alignItems:"center", gap:16, marginBottom:16 }}>
@@ -91,15 +91,14 @@ export function Voices() {
               <div style={{ flex:1 }}>
                 <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
                   <span style={{ color:"#e0e0ff", fontWeight:700, fontSize:15 }}>{v.name}</span>
-                  {v.active && <Badge label="DEFAULT" color="#7c3aed" />}
+                  <Badge label={chId.toUpperCase()} color="#7c3aed" />
                 </div>
-                <div style={{ color:"#3d3d60", fontSize:12 }}>{v.accent} · {v.style} · {v.samples} training samples</div>
+                <div style={{ color:"#3d3d60", fontSize:12, fontFamily:"'Space Mono',monospace" }}>ElevenLabs · {v.id}</div>
               </div>
               <div style={{ display:"flex", gap:8 }}>
                 <Button small variant="secondary" onClick={() => setPlaying(playing === v.id ? null : v.id)}>
                   {playing === v.id ? "⏹ Stop" : "▶ Preview"}
                 </Button>
-                {!v.active && <Button small variant="ghost">Set Default</Button>}
               </div>
             </div>
             {/* Settings */}

@@ -20,6 +20,22 @@ export const MOCK_TOPICS = [
 const VOL_COLOR = { high: "#10b981", medium: "#f59e0b", low: "#6b7280" };
 const SRC_COLOR = { trending: "#3b82f6", evergreen: "#8b5cf6" };
 
+async function apiFetchJson(path, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, options);
+  let data = {};
+  try {
+    data = await res.json();
+  } catch {
+    data = {};
+  }
+
+  if (!res.ok) {
+    throw new Error(data.error || data.message || `Request failed: ${res.status}`);
+  }
+
+  return data;
+}
+
 function TopicCard({ topic, selected, onSelect, onApprove, onReject, approving, rejecting }) {
   return (
     <div style={{
@@ -81,13 +97,25 @@ function TopicCard({ topic, selected, onSelect, onApprove, onReject, approving, 
 
 export default function Topics() {
   const [topics, setTopics]         = useState([]);
+  const [error, setError]           = useState("");
+  const [loadingTopics, setLoadingTopics] = useState(true);
+
+  const loadTopics = async () => {
+    try {
+      setError("");
+      const data = await apiFetchJson(`/api/autopilot/topics?status=pending_review`, {
+        headers: { "x-app-key": API_KEY },
+      });
+      setTopics(data.topics || []);
+    } catch (e) {
+      setError(e.message || "Failed to load topics.");
+    } finally {
+      setLoadingTopics(false);
+    }
+  };
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/autopilot/topics?status=pending_review`, {
-      headers: { "x-app-key": API_KEY },
-    })
-      .then(r => r.json())
-      .then(d => setTopics(d.topics || []));
+    loadTopics();
   }, []);
   const [selected, setSelected]     = useState(new Set());
   const [filterCh, setFilterCh]     = useState("all");
@@ -119,39 +147,49 @@ export default function Topics() {
   };
 
   const approve = async (topicId) => {
-    setLoading(p => ({ ...p, [topicId]: "approving" }));
-    await fetch(`${API_BASE}/api/autopilot/topics/${topicId}/approve`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-app-key": API_KEY },
-      body: JSON.stringify({}),
-    });
-    setTopics(p => p.map(t => t.topic_id === topicId ? { ...t, status: "approved" } : t));
-    setLoading(p => ({ ...p, [topicId]: null }));
-    showToast("✅ Approved — job created in pipeline");
+    try {
+      setLoading(p => ({ ...p, [topicId]: "approving" }));
+      await apiFetchJson(`/api/autopilot/topics/${topicId}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-app-key": API_KEY },
+        body: JSON.stringify({}),
+      });
+      setTopics(p => p.map(t => t.topic_id === topicId ? { ...t, status: "approved" } : t));
+      showToast("✅ Approved — job created in pipeline");
+    } catch (e) {
+      showToast(`❌ ${e.message || "Approve failed"}`, "#ef4444");
+    } finally {
+      setLoading(p => ({ ...p, [topicId]: null }));
+    }
   };
 
   const reject = async (topicId) => {
-    setLoading(p => ({ ...p, [topicId]: "rejecting" }));
-    await fetch(`${API_BASE}/api/autopilot/topics/${topicId}/reject`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-app-key": API_KEY },
-      body: JSON.stringify({ reason: "Rejected from dashboard" }),
-    });
-    setTopics(p => p.map(t => t.topic_id === topicId ? { ...t, status: "rejected" } : t));
-    setLoading(p => ({ ...p, [topicId]: null }));
-    setSelected(p => { const n = new Set(p); n.delete(topicId); return n; });
-    showToast("✕ Rejected", "#ef4444");
+    try {
+      setLoading(p => ({ ...p, [topicId]: "rejecting" }));
+      await apiFetchJson(`/api/autopilot/topics/${topicId}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-app-key": API_KEY },
+        body: JSON.stringify({ reason: "Rejected from dashboard" }),
+      });
+      setTopics(p => p.map(t => t.topic_id === topicId ? { ...t, status: "rejected" } : t));
+      setSelected(p => { const n = new Set(p); n.delete(topicId); return n; });
+      showToast("✕ Rejected", "#ef4444");
+    } catch (e) {
+      showToast(`❌ ${e.message || "Reject failed"}`, "#ef4444");
+    } finally {
+      setLoading(p => ({ ...p, [topicId]: null }));
+    }
   };
 
   const bulkApprove = () => {
     if (!selected.size) return;
-    [...selected].forEach(id => approve(id));
+    [...selected].forEach((id) => approve(id));
     setSelected(new Set());
   };
 
   const bulkReject = () => {
     if (!selected.size) return;
-    [...selected].forEach(id => reject(id));
+    [...selected].forEach((id) => reject(id));
     setSelected(new Set());
   };
 
@@ -163,27 +201,22 @@ export default function Topics() {
     }
   };
 
-const generateNew = async () => {
-  setGenerating(true);
-  
-  // Fire and forget — don't await
-  fetch(`${API_BASE}/api/autopilot/topics/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-app-key": API_KEY },
-    body: JSON.stringify({ candidate_count: 10 }),
-  });
-
-  // Wait 30 seconds then re-fetch
-  await new Promise(r => setTimeout(r, 30000));
-  
-  const res = await fetch(`${API_BASE}/api/autopilot/topics?status=pending_review`, {
-    headers: { "x-app-key": API_KEY },
-  });
-  const d = await res.json();
-  setTopics(d.topics || []);
-  setGenerating(false);
-  showToast("✅ New topics generated");
-};
+  const generateNew = async () => {
+    setGenerating(true);
+    try {
+      await apiFetchJson(`/api/autopilot/topics/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-app-key": API_KEY },
+        body: JSON.stringify({ candidate_count: 10 }),
+      });
+      await loadTopics();
+      showToast("✅ New topics generated");
+    } catch (e) {
+      showToast(`❌ ${e.message || "Topic generation failed"}`, "#ef4444");
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const approvedCount = topics.filter(t => t.status === "approved").length;
   const rejectedCount = topics.filter(t => t.status === "rejected").length;
@@ -211,6 +244,16 @@ const generateNew = async () => {
           </Button>
         }
       />
+
+      {error && (
+        <div style={{
+          marginBottom: 20, padding: "12px 14px",
+          background: "#1a0d12", border: "1px solid #5b1d2b",
+          borderRadius: 12, color: "#fca5a5", fontSize: 13,
+        }}>
+          {error}
+        </div>
+      )}
 
       {/* Stats bar */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 24 }}>
@@ -260,7 +303,11 @@ const generateNew = async () => {
       </div>
 
       {/* Topic groups by channel */}
-      {Object.keys(grouped).length === 0 ? (
+      {loadingTopics ? (
+        <div style={{ textAlign: "center", padding: "60px 0", color: "#3d3d60" }}>
+          <Spinner size={22} />
+        </div>
+      ) : Object.keys(grouped).length === 0 ? (
         <div style={{ textAlign: "center", padding: "60px 0", color: "#3d3d60" }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
           <div style={{ fontSize: 16, marginBottom: 8 }}>All caught up!</div>

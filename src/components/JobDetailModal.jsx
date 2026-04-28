@@ -5,23 +5,16 @@ import { Button, Spinner, SectionLabel } from "../components/ui";
 const STAGE_META = {
   queued:       { label: "Queued",       color: "#6b7280", icon: "⏳" },
   script_done:  { label: "Script Ready", color: "#3b82f6", icon: "✍️" },
+  voice_generating: { label: "Voice Generating", color: "#6366f1", icon: "🎙️" },
   voice_done:   { label: "Voice Ready",  color: "#8b5cf6", icon: "🎙️" },
   visuals_done: { label: "Visuals Done", color: "#f59e0b", icon: "🎨" },
+  assembly_queued: { label: "Assembly Queued", color: "#ec4899", icon: "🎬" },
   assembled:    { label: "Assembled",    color: "#10b981", icon: "🎬" },
   published:    { label: "Published",    color: "#10b981", icon: "✅" },
   failed:       { label: "Failed",       color: "#ef4444", icon: "❌" },
 };
 
-const ASSET_LABELS = {
-  background_plate: "Background Plate",
-  b_roll_1:         "B-Roll 1",
-  b_roll_2:         "B-Roll 2",
-  b_roll_3:         "B-Roll 3",
-  title_card:       "Title Card",
-  outro_card:       "Outro Card",
-};
-
-function PresignedImage({ s3Key, label }) {
+function PresignedVideo({ s3Key, label }) {
   const [url, setUrl]       = useState(null);
   const [error, setError]   = useState(false);
   const [loading, setLoading] = useState(true);
@@ -56,9 +49,11 @@ function PresignedImage({ s3Key, label }) {
           </div>
         )}
         {url && (
-          <img
+          <video
             src={url}
-            alt={label}
+            muted
+            playsInline
+            controls
             style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
             onError={() => setError(true)}
           />
@@ -108,6 +103,9 @@ export default function JobDetailModal({ job, onClose }) {
   const hasVisuals = Object.keys(visuals).length > 0;
   const hasVoice   = !!job.voiceover_s3_key;
   const hasScript  = !!job.script;
+  const visualEntries = Object.entries(visuals)
+    .filter(([, s3Key]) => !!s3Key)
+    .sort(([a], [b]) => a.localeCompare(b));
 
   return (
     <>
@@ -190,15 +188,15 @@ export default function JobDetailModal({ job, onClose }) {
           {/* Visuals grid */}
           <div>
             <SectionLabel>
-              🎨 Generated Visuals {hasVisuals ? `(${Object.values(visuals).filter(Boolean).length}/6)` : "(not generated)"}
+              🎨 Generated Visuals {hasVisuals ? `(${visualEntries.length})` : "(not generated)"}
             </SectionLabel>
             {hasVisuals ? (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginTop: 10 }}>
-                {Object.entries(ASSET_LABELS).map(([key, label]) => (
-                  <PresignedImage
+                {visualEntries.map(([key, s3Key], index) => (
+                  <PresignedVideo
                     key={key}
-                    s3Key={visuals[key]}
-                    label={label}
+                    s3Key={s3Key}
+                    label={`Clip ${String(index + 1).padStart(2, "0")} · ${key}`}
                   />
                 ))}
               </div>

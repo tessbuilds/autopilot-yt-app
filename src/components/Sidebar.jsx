@@ -1,13 +1,16 @@
-import { CHANNELS, API_HEALTH, QUEUE, PENDING_TOPICS_COUNT } from "../constants";
+import { useEffect, useState } from "react";
+import { CHANNELS, API_HEALTH, QUEUE, PENDING_TOPICS_COUNT, API_BASE, API_KEY } from "../constants";
 
 const TABS = [
-  { id: "dashboard", label: "Dashboard", icon: "▦" },
-  { id: "channels",  label: "Channels",  icon: "📺" },
-  { id: "topics",    label: "Topics",    icon: "💡" },
-  { id: "create",    label: "Create",    icon: "＋" },
-  { id: "queue",     label: "Queue",     icon: "⚙" },
-  { id: "voices",    label: "Voices",    icon: "🎙" },
-  { id: "analytics", label: "Analytics", icon: "📊" },
+  { id: "dashboard", label: "Dashboard",    icon: "▦" },
+  { id: "channels",  label: "Channels",     icon: "📺" },
+  { id: "topics",    label: "Topics",       icon: "💡" },
+  { id: "create",    label: "Create",       icon: "＋" },
+  { id: "shorts",    label: "Shorts",       icon: "⚡" },
+  { id: "queue",     label: "Queue",        icon: "⚙" },
+  { id: "review",    label: "Review Queue", icon: "👁" },
+  { id: "voices",    label: "Voices",       icon: "🎙" },
+  { id: "analytics", label: "Analytics",    icon: "📊" },
 ];
 
 function PulsingDot({ color }) {
@@ -16,6 +19,24 @@ function PulsingDot({ color }) {
 
 export default function Sidebar({ activeTab, setActiveTab }) {
   const activeJobs = QUEUE.filter(q => q.stage !== "done" && q.stage !== "queued").length;
+  const [reviewCount, setReviewCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res  = await fetch(`${API_BASE}/api/autopilot/jobs`, { headers: { "x-app-key": API_KEY } });
+        const data = await res.json();
+        const count = (data.jobs || []).filter(
+          j => j.stage === "pending_review" || j.stage === "assembled"
+        ).length;
+        if (!cancelled) setReviewCount(count);
+      } catch (_e) { /* ignore */ }
+    };
+    load();
+    const interval = setInterval(load, 30000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
 
   return (
     <div style={{
@@ -54,6 +75,11 @@ export default function Sidebar({ activeTab, setActiveTab }) {
               {t.id === "topics" && PENDING_TOPICS_COUNT > 0 && (
                 <span style={{ marginLeft: "auto", background: "#f59e0b", color: "#000", fontSize: 10, padding: "1px 7px", borderRadius: 20, fontFamily: "'Space Mono', monospace", fontWeight: 700 }}>
                   {PENDING_TOPICS_COUNT}
+                </span>
+              )}
+              {t.id === "review" && reviewCount > 0 && (
+                <span style={{ marginLeft: "auto", background: "#10b981", color: "#000", fontSize: 10, padding: "1px 7px", borderRadius: 20, fontFamily: "'Space Mono', monospace", fontWeight: 700 }}>
+                  {reviewCount}
                 </span>
               )}
             </button>

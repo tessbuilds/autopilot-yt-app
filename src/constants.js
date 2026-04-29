@@ -9,7 +9,7 @@ export const PEXELS_API_KEY = import.meta.env.VITE_PEXELS_API_KEY || "";
 
 export const CHANNELS = [
   { id: "ch_001", name: "True Crime Daily",  niche: "True Crime",  avatar: "🔍", videos: 312, subs: "284K", revenue: 1840, status: "live",     nextPublish: "2h",  voice: "Ava",    schedule: "3x/week" },
-  { id: "ch_002", name: "Mind Unlocked",     niche: "Psychology",  avatar: "🧠", videos: 187, subs: "91K",  revenue: 620,  status: "live",     nextPublish: "5h",  voice: "Marcus", schedule: "2x/week" },
+  { id: "ch_002", name: "Strategic Pulse Intel", niche: "Military & Defense", avatar: "🎖️", videos: 187, subs: "91K",  revenue: 620,  status: "live",     nextPublish: "5h",  voice: "Eric",   schedule: "2x/week" },
   { id: "ch_003", name: "Earth Unseen",      niche: "Nature Docs", avatar: "🌍", videos: 94,  subs: "42K",  revenue: 310,  status: "paused",   nextPublish: null,  voice: "Sofia",  schedule: "1x/week" },
   { id: "ch_004", name: "Finance Decoded",   niche: "Finance",     avatar: "📈", videos: 56,  subs: "18K",  revenue: 180,  status: "building", nextPublish: null,  voice: "Ava",    schedule: "2x/week" },
   { id: "ch_005", name: "Shorts — Facts That Hit Different", niche: "Finance Facts", avatar: "⚡", videos: 0, subs: "0",   revenue: 0,    status: "live",     nextPublish: null,  voice: "Charlie", schedule: "daily" },
@@ -17,7 +17,7 @@ export const CHANNELS = [
 
 export const VOICES = {
   ch_001: { id: "VR6AewLTigWG4xSOukaG", name: "Arnold (True Crime)" },
-  ch_002: { id: "TX3LPaxmHKxFdv7VOQHJ", name: "Liam (Mind Unlocked)" },
+  ch_002: { id: "pqHfZKP75CvOlD17v9Eu", name: "Eric (Strategic Pulse Intel)" },
   ch_003: { id: "pNInz6obpgDQGcFmaJgB", name: "Rachel (Earth Unseen)" },
   ch_004: { id: "onwK4e9ZLuTAKqWW03F9", name: "Daniel (Finance)" },
   ch_005: { id: "IKne3meq5aSn9XLyUdCD", name: "Charlie (Shorts)" },

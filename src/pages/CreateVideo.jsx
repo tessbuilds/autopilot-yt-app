@@ -129,6 +129,7 @@ export default function CreateVideo() {
   const [assembleStatus, setAssembleStatus] = useState("");
   const [assembleError, setAssembleError]   = useState("");
   const [scriptStatus, setScriptStatus]     = useState("");
+  const [audioPreviewUrl, setAudioPreviewUrl] = useState(null);
 
   const channel  = CHANNELS.find(c => c.id === channelId);
   const voice    = Object.values(VOICES).find(v => v.id === voiceId);
@@ -195,6 +196,7 @@ export default function CreateVideo() {
     setStep(2);
     setAudioUrl("generating");
     setVoiceStatus("🎙️ Starting voiceover generation…");
+    setAudioPreviewUrl(null);
     setAssembleStatus("");
     setAssembleError("");
 
@@ -228,6 +230,14 @@ export default function CreateVideo() {
         if (job.audio_duration && parseFloat(job.audio_duration) > 0 && job.voiceover_s3_key) {
           setAudioUrl("ready");
           setVoiceStatus(`✅ Voiceover ready — ${Math.round(parseFloat(job.audio_duration))}s audio`);
+          try {
+            const data = await apiFetchJson(`/api/autopilot/presign`, {
+              method:  "POST",
+              headers: { "Content-Type": "application/json", "x-app-key": API_KEY },
+              body:    JSON.stringify({ s3_key: job.voiceover_s3_key }),
+            });
+            setAudioPreviewUrl(data.url);
+          } catch (_e) { /* preview optional */ }
           return;
         }
       } catch (_e) {
@@ -474,7 +484,10 @@ export default function CreateVideo() {
               <Button variant="success" onClick={() => setStep(1)} style={{ justifyContent: "center" }}>
                 🎙️ Go to Voiceover
               </Button>
-              <Button variant="warning" onClick={generateVisuals} disabled={visualsLoading} style={{ justifyContent: "center" }}>
+              <Button variant="warning" onClick={generateVisuals}
+                disabled={visualsLoading || !audioPreviewUrl}
+                title={!audioPreviewUrl ? "Generate and preview voiceover first" : ""}
+                style={{ justifyContent: "center" }}>
                 🎨 Generate Visuals
               </Button>
               <Button onClick={addToQueue} style={{ justifyContent: "center" }}>
@@ -513,6 +526,25 @@ export default function CreateVideo() {
               fontSize: 13, marginTop: 10, textAlign: "center",
             }}>
               {voiceStatus || "🎙️ Starting voiceover generation…"}
+            </div>
+          )}
+
+          {/* Audio preview — appears once voiceover is ready */}
+          {audioPreviewUrl && (
+            <div className="fade-in" style={{
+              background: "#08081e", border: "1px solid #2d1b6e",
+              borderRadius: 12, padding: 16, marginTop: 14,
+            }}>
+              <div style={{ color: "#a78bfa", fontSize: 12, marginBottom: 10, fontWeight: 600 }}>
+                🎧 Preview voiceover:
+              </div>
+              <audio controls src={audioPreviewUrl} style={{ width: "100%" }} />
+              <div style={{ marginTop: 12 }}>
+                <Button variant="danger" onClick={generateVoice} disabled={audioUrl === "generating"}
+                  style={{ width: "100%", justifyContent: "center" }}>
+                  🔄 Regenerate Voice
+                </Button>
+              </div>
             </div>
           )}
         </div>

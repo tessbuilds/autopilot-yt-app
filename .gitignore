@@ -25,3 +25,11 @@ dist-ssr
 src/constants.js
 .env
 .env
+
+# OAuth credentials — never commit these
+client_secret.json
+client_secret*.json
+token_*.json
+.env
+.env.local
+.env.*.local

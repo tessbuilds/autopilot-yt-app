@@ -14,6 +14,30 @@ const VOICES = [
   { id: "onwK4e9ZLuTAKqWW03F9", name: "Daniel — Finance Pro" },
 ];
 
+const VOICE_DEFAULTS = {
+  'VR6AewLTigWG4xSOukaG': { stability: 0.35, similarity: 0.85, style: 0.60 }, // Arnold
+  'pqHfZKP75CvOlD17v9Eu': { stability: 0.80, similarity: 0.80, style: 0.20 }, // Eric
+  '21m00Tcm4TlvDq8ikWAM': { stability: 0.60, similarity: 0.80, style: 0.40 }, // Rachel
+  'onwK4e9ZLuTAKqWW03F9': { stability: 0.75, similarity: 0.82, style: 0.20 }, // Daniel
+  'IKne3meq5aSn9XLyUdCD': { stability: 0.65, similarity: 0.85, style: 0.55 }, // Charlie
+  'JBFqnCBsd6RMkjVDRZzb': { stability: 0.50, similarity: 0.82, style: 0.50 }, // George
+  'pNInz6obpgDQGcFmaJgB': { stability: 0.70, similarity: 0.85, style: 0.62 }, // Adam
+};
+
+const SLIDER_LABELS = {
+  stability:  'Voice Control',
+  similarity: 'Voice Identity',
+  style:      'Dramatic Energy',
+};
+
+const VOICE_PRESETS = [
+  { name: 'Cinematic Doc',  icon: '🎬', stability: 0.70, similarity: 0.85, style: 0.62 },
+  { name: 'Breaking News',  icon: '🔴', stability: 0.55, similarity: 0.85, style: 0.55 },
+  { name: 'High Tension',   icon: '⚡', stability: 0.45, similarity: 0.85, style: 0.75 },
+  { name: 'Calm Authority', icon: '🎙️', stability: 0.80, similarity: 0.85, style: 0.35 },
+  { name: 'Viral Energy',   icon: '🔥', stability: 0.40, similarity: 0.82, style: 0.80 },
+];
+
 // ── Pexels search (vertical) ─────────────────────────────────────────
 async function searchPexelsVertical(keyword, apiKey) {
   const res = await fetch(
@@ -45,7 +69,56 @@ export default function Shorts() {
   const [mode,     setMode]     = useState("new");        // "new" | "from"
   const [topic,    setTopic]    = useState("");
   const [duration, setDuration]           = useState("45s");
-  const [selectedVoice, setSelectedVoice] = useState("IKne3meq5aSn9XLyUdCD");
+  const [selectedVoice, setSelectedVoice] = useState(() => {
+    const saved = localStorage.getItem('shortsVoiceId');
+    return saved && VOICES.some(v => v.id === saved) ? saved : 'IKne3meq5aSn9XLyUdCD';
+  });
+  const [voiceSettings, setVoiceSettings] = useState(() => {
+    const saved = localStorage.getItem('shortsVoiceSettings');
+    try {
+      return saved ? JSON.parse(saved) : { stability: 0.65, similarity: 0.85, style: 0.55 };
+    } catch {
+      return { stability: 0.65, similarity: 0.85, style: 0.55 };
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('shortsVoiceId', selectedVoice);
+  }, [selectedVoice]);
+
+  useEffect(() => {
+    localStorage.setItem('shortsVoiceSettings', JSON.stringify(voiceSettings));
+  }, [voiceSettings]);
+
+  const handleVoiceChange = (id) => {
+    setSelectedVoice(id);
+    if (VOICE_DEFAULTS[id]) setVoiceSettings(VOICE_DEFAULTS[id]);
+  };
+
+  const [previewAudioUrl, setPreviewAudioUrl] = useState(null);
+  const [previewLoading,  setPreviewLoading]  = useState(false);
+
+  const handleVoicePreview = async () => {
+    setPreviewLoading(true);
+    setPreviewAudioUrl(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/autopilot/voice/preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-app-key': API_KEY },
+        body: JSON.stringify({
+          voice_id:   selectedVoice,
+          stability:  voiceSettings.stability,
+          similarity: voiceSettings.similarity,
+          style:      voiceSettings.style,
+          text: 'The market is about to face its biggest test yet. And most investors have no idea what is coming.',
+        }),
+      });
+      const data = await res.json();
+      if (data.url) setPreviewAudioUrl(data.url);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
   const [sourceJobs,    setSourceJobs]    = useState([]);
   const [sourceJobId,   setSourceJobId]   = useState("");
 
@@ -132,7 +205,21 @@ export default function Shorts() {
       await api("/api/autopilot/voice", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ job_id: jobId, channel_id: CHANNEL_ID, voice_id: selectedVoice, script }),
+        body:    JSON.stringify({
+          job_id: jobId,
+          channel_id: CHANNEL_ID,
+          voice_id: selectedVoice,
+          script,
+          stability:  voiceSettings.stability,
+          similarity: voiceSettings.similarity,
+          style:      voiceSettings.style,
+          voice_settings: {
+            stability:         voiceSettings.stability,
+            similarity_boost:  voiceSettings.similarity,
+            style:             voiceSettings.style,
+            use_speaker_boost: true,
+          },
+        }),
       });
     } catch (e) {
       setError(e.message); setVoiceStatus(""); setVoiceBusy(false); return;
@@ -309,10 +396,76 @@ export default function Shorts() {
         <SectionLabel>Voice</SectionLabel>
         <Select
           value={selectedVoice}
-          onChange={setSelectedVoice}
+          onChange={handleVoiceChange}
           options={VOICES.map(v => ({ value: v.id, label: v.name }))}
           style={{ width: "100%" }}
         />
+      </div>
+
+      {/* Voice settings sliders */}
+      <div style={{ background: "#1a1a2e", borderRadius: 12, padding: 16, marginBottom: 18, border: "1px solid #333", maxWidth: 480 }}>
+        <div style={{ color: "#aaa", fontSize: 13, marginBottom: 12 }}>🎙️ Voice Settings</div>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+          {VOICE_PRESETS.map(preset => (
+            <button
+              key={preset.name}
+              onClick={() => setVoiceSettings({
+                stability:  preset.stability,
+                similarity: preset.similarity,
+                style:      preset.style,
+              })}
+              style={{
+                background: "#0f0f23",
+                border: "1px solid #333",
+                borderRadius: 8,
+                padding: "6px 12px",
+                color: "#ccc",
+                cursor: "pointer",
+                fontSize: 12,
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+              }}>
+              {preset.icon} {preset.name}
+            </button>
+          ))}
+        </div>
+
+        {Object.entries(SLIDER_LABELS).map(([key, label]) => (
+          <div key={key} style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", color: "#ccc", fontSize: 13 }}>
+              <span>{label}</span>
+              <span style={{ color: "#a78bfa" }}>{voiceSettings[key].toFixed(2)}</span>
+            </div>
+            <input
+              type="range" min="0" max="1" step="0.01"
+              value={voiceSettings[key]}
+              onChange={e => setVoiceSettings(p => ({ ...p, [key]: parseFloat(e.target.value) }))}
+              style={{ width: "100%", accentColor: "#a78bfa" }}
+            />
+          </div>
+        ))}
+
+        <button
+          onClick={handleVoicePreview}
+          disabled={previewLoading}
+          style={{
+            background: "#1e1e3f",
+            border: "1px solid #6366f1",
+            borderRadius: 8,
+            padding: "8px 16px",
+            color: "#a78bfa",
+            cursor: previewLoading ? "wait" : "pointer",
+            fontSize: 13,
+            width: "100%",
+            marginTop: 8,
+          }}>
+          {previewLoading ? "⏳ Generating preview..." : "▶ Preview Voice"}
+        </button>
+        {previewAudioUrl && (
+          <audio controls src={previewAudioUrl} style={{ width: "100%", marginTop: 8 }} />
+        )}
       </div>
 
       {/* Mode tabs */}
@@ -401,7 +554,30 @@ export default function Shorts() {
           <div style={{ color: "#a78bfa", fontSize: 12, marginBottom: 10, fontWeight: 600 }}>
             🎧 Preview voiceover before continuing:
           </div>
-          <audio controls src={audioPreviewUrl} style={{ width: "100%", marginBottom: voiceApproved ? 0 : 12 }} />
+          <audio controls src={audioPreviewUrl} style={{ width: "100%", marginBottom: 12 }} />
+          <div style={{ marginBottom: voiceApproved ? 0 : 10 }}>
+            <button
+              onClick={() => {
+                const a = document.createElement('a');
+                a.href = audioPreviewUrl;
+                a.download = `voice-${jobId}.mp3`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+              }}
+              style={{
+                background: '#6366f1',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                padding: '10px 20px',
+                cursor: 'pointer',
+                fontWeight: 600,
+                width: '100%'
+              }}>
+              ⬇️ Download Audio
+            </button>
+          </div>
           {!voiceApproved ? (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <Button variant="success" onClick={handleApproveVoice} disabled={voiceBusy}

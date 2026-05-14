@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { CHANNELS, VOICES, API_BASE, API_KEY, PEXELS_API_KEY } from "../constants";
+import { useState, useEffect } from "react";
+import { CHANNELS, VOICE_LIBRARY, API_BASE, API_KEY, PEXELS_API_KEY } from "../constants";
 import { Button, Input, Select, Spinner, SectionLabel } from "../components/ui";
 
 const STEP_LABELS = ["Script", "Voiceover", "Visuals", "Assemble", "Publish"];
@@ -16,6 +16,30 @@ const DURATION_OPTIONS = [
   { value: "short",  label: "Short  (~5 min)" },
   { value: "medium", label: "Medium (~10 min)" },
   { value: "long",   label: "Long   (~15 min)" },
+];
+
+const VOICE_DEFAULTS = {
+  'VR6AewLTigWG4xSOukaG': { stability: 0.35, similarity: 0.85, style: 0.60 }, // Arnold
+  'pqHfZKP75CvOlD17v9Eu': { stability: 0.80, similarity: 0.80, style: 0.20 }, // Eric
+  '21m00Tcm4TlvDq8ikWAM': { stability: 0.60, similarity: 0.80, style: 0.40 }, // Rachel
+  'onwK4e9ZLuTAKqWW03F9': { stability: 0.75, similarity: 0.82, style: 0.20 }, // Daniel
+  'IKne3meq5aSn9XLyUdCD': { stability: 0.65, similarity: 0.85, style: 0.55 }, // Charlie
+  'JBFqnCBsd6RMkjVDRZzb': { stability: 0.50, similarity: 0.82, style: 0.50 }, // George
+  'pNInz6obpgDQGcFmaJgB': { stability: 0.70, similarity: 0.85, style: 0.62 }, // Adam
+};
+
+const SLIDER_LABELS = {
+  stability:  'Voice Control',
+  similarity: 'Voice Identity',
+  style:      'Dramatic Energy',
+};
+
+const VOICE_PRESETS = [
+  { name: 'Cinematic Doc',  icon: '🎬', stability: 0.70, similarity: 0.85, style: 0.62 },
+  { name: 'Breaking News',  icon: '🔴', stability: 0.55, similarity: 0.85, style: 0.55 },
+  { name: 'High Tension',   icon: '⚡', stability: 0.45, similarity: 0.85, style: 0.75 },
+  { name: 'Calm Authority', icon: '🎙️', stability: 0.80, similarity: 0.85, style: 0.35 },
+  { name: 'Viral Energy',   icon: '🔥', stability: 0.40, similarity: 0.82, style: 0.80 },
 ];
 
 function PipelineStep({ index, label, active, done }) {
@@ -110,7 +134,71 @@ export default function CreateVideo() {
   const [step, setStep]               = useState(0);
   const [topic, setTopic]             = useState("");
   const [channelId, setChannelId]     = useState(CHANNELS[0].id);
-  const [voiceId, setVoiceId]         = useState(Object.values(VOICES)[0].id);
+  const [voiceId, setVoiceId]         = useState(() => {
+    const saved = localStorage.getItem('voiceId');
+    return saved && VOICE_LIBRARY.some(v => v.id === saved) ? saved : VOICE_LIBRARY[0].id;
+  });
+  const [voiceSettings, setVoiceSettings] = useState(() => {
+    const saved = localStorage.getItem('voiceSettings');
+    if (saved) {
+      try { return JSON.parse(saved); } catch { /* fall through */ }
+    }
+    const initialId = localStorage.getItem('voiceId') || VOICE_LIBRARY[0].id;
+    return VOICE_DEFAULTS[initialId] ?? { stability: 0.70, similarity: 0.85, style: 0.62 };
+  });
+
+  useEffect(() => {
+    localStorage.setItem('voiceId', voiceId);
+  }, [voiceId]);
+
+  useEffect(() => {
+    localStorage.setItem('voiceSettings', JSON.stringify(voiceSettings));
+  }, [voiceSettings]);
+
+  const [previewAudioUrl, setPreviewAudioUrl] = useState(null);
+  const [previewLoading,  setPreviewLoading]  = useState(false);
+
+  const [checkResults, setCheckResults] = useState(null);
+  const [checking,     setChecking]     = useState(false);
+
+  const handleCheckScript = async () => {
+    if (!script.trim()) return;
+    setChecking(true);
+    setCheckResults(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/autopilot/script/check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-app-key': API_KEY },
+        body: JSON.stringify({ script }),
+      });
+      const data = await res.json();
+      setCheckResults(data);
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const handleVoicePreview = async () => {
+    setPreviewLoading(true);
+    setPreviewAudioUrl(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/autopilot/voice/preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-app-key': API_KEY },
+        body: JSON.stringify({
+          voice_id:   voiceId,
+          stability:  voiceSettings.stability,
+          similarity: voiceSettings.similarity,
+          style:      voiceSettings.style,
+          text: 'The market is about to face its biggest test yet. And most investors have no idea what is coming.',
+        }),
+      });
+      const data = await res.json();
+      if (data.url) setPreviewAudioUrl(data.url);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
   const [visualStyle, setVisualStyle] = useState("cinematic");
   const [duration, setDuration]       = useState("medium");
   const [script, setScript]           = useState("");
@@ -132,8 +220,13 @@ export default function CreateVideo() {
   const [audioPreviewUrl, setAudioPreviewUrl] = useState(null);
 
   const channel  = CHANNELS.find(c => c.id === channelId);
-  const voice    = Object.values(VOICES).find(v => v.id === voiceId);
+  const voice    = VOICE_LIBRARY.find(v => v.id === voiceId);
   const wordCount = script.split(/\s+/).filter(Boolean).length;
+
+  const handleVoiceChange = (id) => {
+    setVoiceId(id);
+    if (VOICE_DEFAULTS[id]) setVoiceSettings(VOICE_DEFAULTS[id]);
+  };
 
   // ── Step 1: Generate script (fire & poll) ────────────────────────
   const generateScript = async () => {
@@ -204,7 +297,21 @@ export default function CreateVideo() {
       await apiFetchJson(`/api/autopilot/voice`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-app-key": API_KEY },
-        body: JSON.stringify({ job_id: jobId, channel_id: channelId, script }),
+        body: JSON.stringify({
+          job_id: jobId,
+          channel_id: channelId,
+          voice_id: voiceId,
+          script,
+          stability:  voiceSettings.stability,
+          similarity: voiceSettings.similarity,
+          style:      voiceSettings.style,
+          voice_settings: {
+            stability:         voiceSettings.stability,
+            similarity_boost:  voiceSettings.similarity,
+            style:             voiceSettings.style,
+            use_speaker_boost: true,
+          },
+        }),
       });
     } catch (e) {
       setAudioUrl(null);
@@ -416,8 +523,8 @@ export default function CreateVideo() {
         </div>
         <div>
           <SectionLabel>Voice</SectionLabel>
-          <Select value={voiceId} onChange={setVoiceId}
-            options={Object.values(VOICES).map(v => ({ value: v.id, label: v.name }))}
+          <Select value={voiceId} onChange={handleVoiceChange}
+            options={VOICE_LIBRARY.map(v => ({ value: v.id, label: v.name }))}
             style={{ width: "100%" }} />
         </div>
         <div>
@@ -428,6 +535,72 @@ export default function CreateVideo() {
           <SectionLabel>Duration</SectionLabel>
           <Select value={duration} onChange={setDuration} options={DURATION_OPTIONS} style={{ width: "100%" }} />
         </div>
+      </div>
+
+      {/* Voice settings sliders */}
+      <div style={{ background: "#1a1a2e", borderRadius: 12, padding: 16, marginBottom: 22, border: "1px solid #333" }}>
+        <div style={{ color: "#aaa", fontSize: 13, marginBottom: 12 }}>🎙️ Voice Settings</div>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+          {VOICE_PRESETS.map(preset => (
+            <button
+              key={preset.name}
+              onClick={() => setVoiceSettings({
+                stability:  preset.stability,
+                similarity: preset.similarity,
+                style:      preset.style,
+              })}
+              style={{
+                background: "#0f0f23",
+                border: "1px solid #333",
+                borderRadius: 8,
+                padding: "6px 12px",
+                color: "#ccc",
+                cursor: "pointer",
+                fontSize: 12,
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+              }}>
+              {preset.icon} {preset.name}
+            </button>
+          ))}
+        </div>
+
+        {Object.entries(SLIDER_LABELS).map(([key, label]) => (
+          <div key={key} style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", color: "#ccc", fontSize: 13 }}>
+              <span>{label}</span>
+              <span style={{ color: "#a78bfa" }}>{voiceSettings[key].toFixed(2)}</span>
+            </div>
+            <input
+              type="range" min="0" max="1" step="0.01"
+              value={voiceSettings[key]}
+              onChange={e => setVoiceSettings(p => ({ ...p, [key]: parseFloat(e.target.value) }))}
+              style={{ width: "100%", accentColor: "#a78bfa" }}
+            />
+          </div>
+        ))}
+
+        <button
+          onClick={handleVoicePreview}
+          disabled={previewLoading}
+          style={{
+            background: "#1e1e3f",
+            border: "1px solid #6366f1",
+            borderRadius: 8,
+            padding: "8px 16px",
+            color: "#a78bfa",
+            cursor: previewLoading ? "wait" : "pointer",
+            fontSize: 13,
+            width: "100%",
+            marginTop: 8,
+          }}>
+          {previewLoading ? "⏳ Generating preview..." : "▶ Preview Voice"}
+        </button>
+        {previewAudioUrl && (
+          <audio controls src={previewAudioUrl} style={{ width: "100%", marginTop: 8 }} />
+        )}
       </div>
 
       {/* Topic */}
@@ -480,20 +653,120 @@ export default function CreateVideo() {
             }}
           />
           {script && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 16 }}>
-              <Button variant="success" onClick={() => setStep(1)} style={{ justifyContent: "center" }}>
-                🎙️ Go to Voiceover
-              </Button>
-              <Button variant="warning" onClick={generateVisuals}
-                disabled={visualsLoading || !audioPreviewUrl}
-                title={!audioPreviewUrl ? "Generate and preview voiceover first" : ""}
-                style={{ justifyContent: "center" }}>
-                🎨 Generate Visuals
-              </Button>
-              <Button onClick={addToQueue} style={{ justifyContent: "center" }}>
-                {addedToQueue ? "✅ Added!" : "🚀 Add to Queue"}
-              </Button>
-            </div>
+            <>
+              <button
+                onClick={handleCheckScript}
+                disabled={checking}
+                style={{
+                  background: "#1e1e3f",
+                  border: "1px solid #6366f1",
+                  borderRadius: 8,
+                  padding: "10px 16px",
+                  color: "#a78bfa",
+                  cursor: checking ? "wait" : "pointer",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  width: "100%",
+                  marginTop: 12,
+                }}>
+                {checking ? "⏳ Checking…" : "🔍 Check Script"}
+              </button>
+
+              {checkResults && (
+                <div style={{
+                  background: "#0f0f23",
+                  borderRadius: 12,
+                  padding: 16,
+                  marginTop: 12,
+                  border: `1px solid ${checkResults.score > 80 ? "#10b981" : checkResults.score > 60 ? "#f59e0b" : "#ef4444"}`,
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+                    <span style={{ color: "#aaa", fontSize: 14 }}>Script Quality Score</span>
+                    <span style={{
+                      fontSize: 24, fontWeight: 900,
+                      color: checkResults.score > 80 ? "#10b981" : checkResults.score > 60 ? "#f59e0b" : "#ef4444",
+                    }}>{checkResults.score}/100</span>
+                  </div>
+
+                  {checkResults.summary && (
+                    <div style={{ color: "#ccc", fontSize: 13, marginBottom: 12 }}>
+                      {checkResults.summary}
+                    </div>
+                  )}
+
+                  {checkResults.errors?.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ color: "#ef4444", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                        🔴 Errors ({checkResults.errors.length})
+                      </div>
+                      {checkResults.errors.map((e, i) => (
+                        <div key={i} style={{
+                          background: "#1a0000", borderRadius: 6, padding: "6px 10px",
+                          marginBottom: 4, fontSize: 12, color: "#fca5a5",
+                        }}>
+                          <strong>{e.severity?.toUpperCase()}</strong> — {e.issue}
+                          {e.line && <div style={{ color: "#888", marginTop: 2 }}>"{e.line}"</div>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {checkResults.duplicates?.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ color: "#f59e0b", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                        🟡 Duplicates ({checkResults.duplicates.length})
+                      </div>
+                      {checkResults.duplicates.map((d, i) => (
+                        <div key={i} style={{
+                          background: "#1a1200", borderRadius: 6, padding: "6px 10px",
+                          marginBottom: 4, fontSize: 12, color: "#fde68a",
+                        }}>
+                          "{d.text}"
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {checkResults.style_issues?.length > 0 && (
+                    <div>
+                      <div style={{ color: "#6366f1", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                        🔵 Style Issues ({checkResults.style_issues.length})
+                      </div>
+                      {checkResults.style_issues.map((s, i) => (
+                        <div key={i} style={{
+                          background: "#0a0a1a", borderRadius: 6, padding: "6px 10px",
+                          marginBottom: 4, fontSize: 12, color: "#a5b4fc",
+                        }}>
+                          {s.issue}
+                          {s.line && <div style={{ color: "#888", marginTop: 2 }}>"{s.line}"</div>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {checkResults.error && (
+                    <div style={{ color: "#fca5a5", fontSize: 12 }}>
+                      ⚠ {checkResults.error}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 16 }}>
+                <Button variant="success" onClick={() => setStep(1)} style={{ justifyContent: "center" }}>
+                  🎙️ Go to Voiceover
+                </Button>
+                <Button variant="warning" onClick={generateVisuals}
+                  disabled={visualsLoading || !audioPreviewUrl}
+                  title={!audioPreviewUrl ? "Generate and preview voiceover first" : ""}
+                  style={{ justifyContent: "center" }}>
+                  🎨 Generate Visuals
+                </Button>
+                <Button onClick={addToQueue} style={{ justifyContent: "center" }}>
+                  {addedToQueue ? "✅ Added!" : "🚀 Add to Queue"}
+                </Button>
+              </div>
+            </>
           )}
         </div>
       )}
@@ -509,14 +782,19 @@ export default function CreateVideo() {
               <div style={{ color: "#3d3d60", fontSize: 12 }}>ElevenLabs v2</div>
             </div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
-            {[["Stability", "0.75"], ["Similarity Boost", "0.85"], ["Style", "0.40"], ["Speed", "1.0×"]].map(([k, v]) => (
-              <div key={k} style={{ background: "#06061a", borderRadius: 8, padding: "10px 14px", display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 12, color: "#3d3d60" }}>{k}</span>
-                <span style={{ fontSize: 12, color: "#a78bfa", fontFamily: "'Space Mono',monospace" }}>{v}</span>
-              </div>
-            ))}
-          </div>
+<div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+  {[
+    ["Stability",        voiceSettings.stability.toFixed(2)],
+    ["Similarity Boost", voiceSettings.similarity.toFixed(2)],
+    ["Style",            voiceSettings.style.toFixed(2)],
+    ["Speed",            "1.0×"],
+  ].map(([k, v]) => (
+    <div key={k} style={{ background: "#06061a", borderRadius: 8, padding: "10px 14px", display: "flex", justifyContent: "space-between" }}>
+      <span style={{ fontSize: 12, color: "#3d3d60" }}>{k}</span>
+      <span style={{ fontSize: 12, color: "#a78bfa", fontFamily: "'Space Mono',monospace" }}>{v}</span>
+    </div>
+  ))}
+</div>
           <Button style={{ width: "100%", justifyContent: "center" }} onClick={generateVoice} disabled={audioUrl === "generating"}>
             {audioUrl === "generating" ? <><Spinner size={14} /> Generating…</> : "🎙️ Generate Full Voiceover via ElevenLabs"}
           </Button>
@@ -539,9 +817,30 @@ export default function CreateVideo() {
                 🎧 Preview voiceover:
               </div>
               <audio controls src={audioPreviewUrl} style={{ width: "100%" }} />
-              <div style={{ marginTop: 12 }}>
+              <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
+                <button
+                  onClick={() => {
+                    const a = document.createElement('a');
+                    a.href = audioPreviewUrl;
+                    a.download = `voice-${jobId}.mp3`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                  }}
+                  style={{
+                    background: '#6366f1',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 8,
+                    padding: '10px 20px',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    flex: 1
+                  }}>
+                  ⬇️ Download Audio
+                </button>
                 <Button variant="danger" onClick={generateVoice} disabled={audioUrl === "generating"}
-                  style={{ width: "100%", justifyContent: "center" }}>
+                  style={{ flex: 1, justifyContent: "center" }}>
                   🔄 Regenerate Voice
                 </Button>
               </div>

@@ -15,13 +15,27 @@ export const CHANNELS = [
   { id: "ch_005", name: "Shorts — Facts That Hit Different", niche: "Finance Facts", avatar: "⚡", videos: 0, subs: "0",   revenue: 0,    status: "live",     nextPublish: null,  voice: "Charlie", schedule: "daily" },
 ];
 
+// Channel → default voice mapping. ch_003 was historically misnamed "Rachel"
+// but the actual ID was Adam — kept on Adam so the channel's sound is unchanged.
 export const VOICES = {
-  ch_001: { id: "VR6AewLTigWG4xSOukaG", name: "Arnold (True Crime)" },
-  ch_002: { id: "pqHfZKP75CvOlD17v9Eu", name: "Eric (Strategic Pulse Intel)" },
-  ch_003: { id: "pNInz6obpgDQGcFmaJgB", name: "Rachel (Earth Unseen)" },
-  ch_004: { id: "onwK4e9ZLuTAKqWW03F9", name: "Daniel (Finance)" },
-  ch_005: { id: "IKne3meq5aSn9XLyUdCD", name: "Charlie (Shorts)" },
+  ch_001: { id: import.meta.env.VITE_VOICE_ARNOLD,  name: "Arnold (True Crime)" },
+  ch_002: { id: import.meta.env.VITE_VOICE_ERIC,    name: "Eric (Strategic Pulse Intel)" },
+  ch_003: { id: import.meta.env.VITE_VOICE_ADAM,    name: "Adam (Earth Unseen)" },
+  ch_004: { id: import.meta.env.VITE_VOICE_DANIEL,  name: "Daniel (Finance)" },
+  ch_005: { id: import.meta.env.VITE_VOICE_CHARLIE, name: "Charlie (Shorts)" },
 };
+
+// Full picker library shown in the Create Video voice dropdown.
+// Includes voices not bound to a default channel (George) and the real Rachel.
+export const VOICE_LIBRARY = [
+  { id: "VR6AewLTigWG4xSOukaG", name: "Arnold — True Crime" },
+  { id: "pqHfZKP75CvOlD17v9Eu", name: "Eric — Military" },
+  { id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel — Nature" },
+  { id: "onwK4e9ZLuTAKqWW03F9", name: "Daniel — Finance" },
+  { id: "IKne3meq5aSn9XLyUdCD", name: "Charlie — Shorts" },
+  { id: "JBFqnCBsd6RMkjVDRZzb", name: "George — British" },
+  { id: "pNInz6obpgDQGcFmaJgB", name: "Adam — Documentary" },
+];
 
 export const PIPELINE_STAGES = {
   queued:           { color: "#4b5563", label: "Queued",           icon: "⏳", order: 0 },

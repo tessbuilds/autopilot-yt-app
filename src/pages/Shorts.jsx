@@ -31,11 +31,11 @@ const SLIDER_LABELS = {
 };
 
 const VOICE_PRESETS = [
-  { name: 'Cinematic Doc',  icon: '🎬', stability: 0.70, similarity: 0.85, style: 0.62 },
-  { name: 'Breaking News',  icon: '🔴', stability: 0.55, similarity: 0.85, style: 0.55 },
-  { name: 'High Tension',   icon: '⚡', stability: 0.45, similarity: 0.85, style: 0.75 },
-  { name: 'Calm Authority', icon: '🎙️', stability: 0.80, similarity: 0.85, style: 0.35 },
-  { name: 'Viral Energy',   icon: '🔥', stability: 0.40, similarity: 0.82, style: 0.80 },
+  { name: 'Cinematic Doc',  icon: '🎬', stability: 0.70, similarity: 0.85, style: 0.62, speed: 0.95 },
+  { name: 'Breaking News',  icon: '🔴', stability: 0.55, similarity: 0.85, style: 0.55, speed: 1.05 },
+  { name: 'High Tension',   icon: '⚡', stability: 0.45, similarity: 0.85, style: 0.75, speed: 1.05 },
+  { name: 'Calm Authority', icon: '🎙️', stability: 0.80, similarity: 0.85, style: 0.35, speed: 0.95 },
+  { name: 'Viral Energy',   icon: '🔥', stability: 0.40, similarity: 0.82, style: 0.80, speed: 1.10 },
 ];
 
 // ── Pexels search (vertical) ─────────────────────────────────────────
@@ -90,6 +90,15 @@ export default function Shorts() {
     localStorage.setItem('shortsVoiceSettings', JSON.stringify(voiceSettings));
   }, [voiceSettings]);
 
+  const [voiceSpeed, setVoiceSpeed] = useState(() => {
+    const saved = localStorage.getItem('shortsVoiceSpeed');
+    return saved ? parseFloat(saved) : 1.10;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('shortsVoiceSpeed', voiceSpeed.toString());
+  }, [voiceSpeed]);
+
   const handleVoiceChange = (id) => {
     setSelectedVoice(id);
     if (VOICE_DEFAULTS[id]) setVoiceSettings(VOICE_DEFAULTS[id]);
@@ -110,6 +119,7 @@ export default function Shorts() {
           stability:  voiceSettings.stability,
           similarity: voiceSettings.similarity,
           style:      voiceSettings.style,
+          speed:      voiceSpeed,
           text: 'The market is about to face its biggest test yet. And most investors have no idea what is coming.',
         }),
       });
@@ -213,10 +223,12 @@ export default function Shorts() {
           stability:  voiceSettings.stability,
           similarity: voiceSettings.similarity,
           style:      voiceSettings.style,
+          speed:      voiceSpeed,
           voice_settings: {
             stability:         voiceSettings.stability,
             similarity_boost:  voiceSettings.similarity,
             style:             voiceSettings.style,
+            speed:             voiceSpeed,
             use_speaker_boost: true,
           },
         }),
@@ -410,11 +422,14 @@ export default function Shorts() {
           {VOICE_PRESETS.map(preset => (
             <button
               key={preset.name}
-              onClick={() => setVoiceSettings({
-                stability:  preset.stability,
-                similarity: preset.similarity,
-                style:      preset.style,
-              })}
+              onClick={() => {
+                setVoiceSettings({
+                  stability:  preset.stability,
+                  similarity: preset.similarity,
+                  style:      preset.style,
+                });
+                setVoiceSpeed(preset.speed);
+              }}
               style={{
                 background: "#0f0f23",
                 border: "1px solid #333",
@@ -446,6 +461,19 @@ export default function Shorts() {
             />
           </div>
         ))}
+
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", color: "#ccc", fontSize: 13 }}>
+            <span>Speed</span>
+            <span style={{ color: "#a78bfa" }}>{voiceSpeed.toFixed(2)}×</span>
+          </div>
+          <input
+            type="range" min="0.7" max="1.2" step="0.05"
+            value={voiceSpeed}
+            onChange={e => setVoiceSpeed(parseFloat(e.target.value))}
+            style={{ width: "100%", accentColor: "#a78bfa" }}
+          />
+        </div>
 
         <button
           onClick={handleVoicePreview}

@@ -392,7 +392,7 @@ export default function CreateVideo() {
       const kwData = await apiFetchJson(`/api/autopilot/visuals-keywords`, {
         method:  "POST",
         headers: { "Content-Type": "application/json", "x-app-key": API_KEY },
-        body:    JSON.stringify({ topic, script, channel_id: channelId, clips_needed: clipsNeeded }),
+        body: JSON.stringify({job_id: jobId, audio_duration: audioDuration, topic, script, channel_id: channelId, clips_needed: clipsNeeded}),
       });
 
       const sections = Array.isArray(kwData.sections) ? kwData.sections : [];

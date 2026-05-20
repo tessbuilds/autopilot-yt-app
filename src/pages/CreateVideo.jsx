@@ -394,51 +394,120 @@ export default function CreateVideo() {
         headers: { "Content-Type": "application/json", "x-app-key": API_KEY },
         body:    JSON.stringify({ topic, script, channel_id: channelId, clips_needed: clipsNeeded }),
       });
-      const keywords = kwData.keywords || [topic, topic, topic, topic, topic, topic];
 
-      // 3b. For each keyword: search Pexels → download → upload to S3
+      const sections = Array.isArray(kwData.sections) ? kwData.sections : [];
       const newAssets = {};
-      for (let i = 0; i < keywords.length; i++) {
-        const kw      = keywords[i];
-        const clipKey = `clip_${String(i).padStart(2, "0")}`;
-        const s3Key   = `autopilot/jobs/${jobId}/visuals/${clipKey}.mp4`;
 
-        setVisualsProgress(`🎬 Fetching clip ${i + 1}/${keywords.length}: "${kw}"…`);
+      if (sections.length) {
+        // v2 path: nested sections with per-clip duration/mood/visual_type
+        const clipMetadata = [];
+        let globalClipIndex = 0;
 
-        try {
-          // Search Pexels from browser (no AWS IP block)
-          const videoUrl = await searchPexelsVideos(kw, PEXELS_API_KEY);
-          if (!videoUrl) {
-            console.warn(`No Pexels result for "${kw}", skipping`);
-            continue;
+        for (const section of sections) {
+          const clips = Array.isArray(section.clips) ? section.clips : [];
+          for (let i = 0; i < clips.length; i++) {
+            const clip = clips[i];
+            const keywords = Array.isArray(clip.keywords) ? clip.keywords : [];
+            if (!keywords.length) continue;
+
+            const clipKey = `clip_${String(globalClipIndex).padStart(2, "0")}_${section.section}`;
+            const s3Key   = `autopilot/jobs/${jobId}/visuals/${clipKey}.mp4`;
+
+            setVisualsProgress(`🎬 ${section.section} clip ${i + 1}/${clips.length}: "${keywords[0]}"…`);
+
+            // Pexels fallback chain — try keyword[0], then [1], then [2]
+            let videoUrl = null;
+            let usedKeyword = null;
+            for (const kw of keywords) {
+              try {
+                videoUrl = await searchPexelsVideos(kw, PEXELS_API_KEY);
+                if (videoUrl) { usedKeyword = kw; break; }
+              } catch (e) {
+                console.warn(`Pexels keyword failed: ${kw}`, e.message);
+              }
+            }
+            if (!videoUrl) {
+              console.warn(`All keywords failed for ${clipKey}, skipping`);
+              continue;
+            }
+
+            try {
+              setVisualsProgress(`⬇️ Downloading ${clipKey}…`);
+              const blob = await downloadBlob(videoUrl);
+
+              setVisualsProgress(`☁️ Uploading ${clipKey}…`);
+              const uploadUrl = await getPresignedUploadUrl(s3Key);
+              await uploadToS3(uploadUrl, blob);
+
+              newAssets[clipKey] = s3Key;
+              clipMetadata.push({
+                key:          clipKey,
+                section:      section.section,
+                duration:     clip.duration,
+                mood:         clip.mood,
+                visual_type:  clip.visual_type,
+                priority:     section.priority,
+                keyword_used: usedKeyword,
+              });
+              globalClipIndex++;
+            } catch (e) {
+              console.warn(`Upload failed for ${clipKey}:`, e.message);
+            }
           }
-
-          // Download clip as blob
-          setVisualsProgress(`⬇️ Downloading clip ${i + 1}/${keywords.length}…`);
-          const blob = await downloadBlob(videoUrl);
-
-          // Get presigned S3 upload URL
-          setVisualsProgress(`☁️ Uploading clip ${i + 1}/${keywords.length} to S3…`);
-          const uploadUrl = await getPresignedUploadUrl(s3Key);
-          await uploadToS3(uploadUrl, blob);
-
-          newAssets[clipKey] = s3Key;
-        } catch (e) {
-          console.warn(`Clip ${i} failed:`, e.message);
         }
-      }
 
-      if (!Object.keys(newAssets).length) {
-        throw new Error("No clips could be downloaded from Pexels.");
-      }
+        if (!Object.keys(newAssets).length) {
+          throw new Error("No clips could be downloaded from Pexels.");
+        }
 
-      // 3c. Save asset map to DynamoDB via Lambda
-      setVisualsProgress("💾 Saving to database…");
-      await apiFetchJson(`/api/autopilot/visuals-save`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json", "x-app-key": API_KEY },
-        body:    JSON.stringify({ job_id: jobId, assets: newAssets }),
-      });
+        setVisualsProgress("💾 Saving to database…");
+        await apiFetchJson(`/api/autopilot/visuals-save`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json", "x-app-key": API_KEY },
+          body:    JSON.stringify({ job_id: jobId, assets: newAssets, clip_metadata: clipMetadata }),
+        });
+      } else {
+        // v1 fallback: flat keyword array, fixed clip naming
+        const keywords = kwData.keywords || [topic, topic, topic, topic, topic, topic];
+
+        for (let i = 0; i < keywords.length; i++) {
+          const kw      = keywords[i];
+          const clipKey = `clip_${String(i).padStart(2, "0")}`;
+          const s3Key   = `autopilot/jobs/${jobId}/visuals/${clipKey}.mp4`;
+
+          setVisualsProgress(`🎬 Fetching clip ${i + 1}/${keywords.length}: "${kw}"…`);
+
+          try {
+            const videoUrl = await searchPexelsVideos(kw, PEXELS_API_KEY);
+            if (!videoUrl) {
+              console.warn(`No Pexels result for "${kw}", skipping`);
+              continue;
+            }
+
+            setVisualsProgress(`⬇️ Downloading clip ${i + 1}/${keywords.length}…`);
+            const blob = await downloadBlob(videoUrl);
+
+            setVisualsProgress(`☁️ Uploading clip ${i + 1}/${keywords.length} to S3…`);
+            const uploadUrl = await getPresignedUploadUrl(s3Key);
+            await uploadToS3(uploadUrl, blob);
+
+            newAssets[clipKey] = s3Key;
+          } catch (e) {
+            console.warn(`Clip ${i} failed:`, e.message);
+          }
+        }
+
+        if (!Object.keys(newAssets).length) {
+          throw new Error("No clips could be downloaded from Pexels.");
+        }
+
+        setVisualsProgress("💾 Saving to database…");
+        await apiFetchJson(`/api/autopilot/visuals-save`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json", "x-app-key": API_KEY },
+          body:    JSON.stringify({ job_id: jobId, assets: newAssets }),
+        });
+      }
 
       setAssets(newAssets);
       setVisualsProgress("");

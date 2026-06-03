@@ -235,6 +235,157 @@ function ApprovedCard({ job }) {
   );
 }
 
+// ── Render-ready card (draft MP4 from local FFmpeg, awaiting CapCut polish) ──
+function RenderReadyCard({ job }) {
+  const [videoUrl, setVideoUrl] = useState(null);
+  const [downloading, setDownloading] = useState(false);
+  const channel = CHANNELS.find(c => c.id === job.channel_id);
+  const duration = job.draft_mp4_duration_seconds
+    ? `${Math.round(parseFloat(job.draft_mp4_duration_seconds))}s`
+    : "—";
+  const sizeMb = job.draft_mp4_size_bytes
+    ? `${Math.round(parseFloat(job.draft_mp4_size_bytes) / 1024 / 1024)} MB`
+    : "";
+  const renderTime = job.render_duration_seconds
+    ? `${Math.round(parseFloat(job.render_duration_seconds))}s render`
+    : "";
+  const completedAt = job.render_completed_at
+    ? new Date(job.render_completed_at).toLocaleString()
+    : "";
+
+  // Extract the S3 key from the draft_mp4_url (stored as s3://bucket/key)
+  const s3Key = (job.draft_mp4_url || "").replace(/^s3:\/\/[^/]+\//, "");
+
+  useEffect(() => {
+    let cancelled = false;
+    if (s3Key) {
+      presign(s3Key).then(url => {
+        if (!cancelled) setVideoUrl(url);
+      }).catch(() => {});
+    }
+    return () => { cancelled = true; };
+  }, [s3Key]);
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      const url = videoUrl || await presign(s3Key);
+      if (!url) return;
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `draft-${job.job_id}.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <div style={{
+      background: "#08081e", border: "1px solid #6366f133",
+      borderRadius: 14, padding: 18, marginBottom: 12,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 14 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <span style={{
+              fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 4,
+              background: "#6366f118", color: "#a78bfa", border: "1px solid #6366f144",
+            }}>🎬 DRAFT READY</span>
+            <span style={{ color: "#e0e0ff", fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {job.topic || "Untitled"}
+            </span>
+          </div>
+          <div style={{ color: "#3d3d60", fontSize: 11 }}>
+            {channel?.avatar} {channel?.name || job.channel_id} · {duration} · {sizeMb}
+            {renderTime && ` · ${renderTime}`}
+            {completedAt && ` · ${completedAt}`}
+          </div>
+          <div style={{ color: "#6b7280", fontSize: 11, marginTop: 6 }}>
+            job {job.job_id}
+          </div>
+        </div>
+      </div>
+
+{videoUrl ? (
+        <video controls src={videoUrl}
+          style={{
+            width: "100%",
+            maxWidth: 480,
+            borderRadius: 10,
+            background: "#000",
+            aspectRatio: "16/9",
+            marginBottom: 12,
+            display: "block",
+          }}
+        />
+      ) : (
+        <div style={{
+          width: "100%",
+          maxWidth: 480,
+          aspectRatio: "16/9",
+          borderRadius: 10,
+          background: "#000",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          marginBottom: 12,
+        }}>
+          <Spinner size={20} />
+        </div>
+      )}
+
+      <Button
+        variant="success"
+        style={{ width: "100%", justifyContent: "center" }}
+        onClick={handleDownload}
+        disabled={downloading || !s3Key}
+      >
+        {downloading ? <Spinner size={14} /> : "⬇️ Download Draft MP4 for CapCut"}
+      </Button>
+    </div>
+  );
+}
+
+// ── Rendering-in-progress card (Lambda is still working) ────────────
+function RenderingCard({ job }) {
+  const channel = CHANNELS.find(c => c.id === job.channel_id);
+  const startedAt = job.render_started_at
+    ? new Date(job.render_started_at).toLocaleString()
+    : "";
+  const elapsed = job.render_started_at
+    ? Math.round((Date.now() - new Date(job.render_started_at).getTime()) / 1000)
+    : null;
+
+  return (
+    <div style={{
+      background: "#08081e", border: "1px solid #f59e0b33",
+      borderRadius: 14, padding: 16, marginBottom: 12,
+      display: "flex", alignItems: "center", gap: 16,
+    }}>
+      <Spinner size={18} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+          <span style={{
+            fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 4,
+            background: "#f59e0b18", color: "#f59e0b", border: "1px solid #f59e0b44",
+          }}>🎬 RENDERING</span>
+          <span style={{ color: "#e0e0ff", fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {job.topic || "Untitled"}
+          </span>
+        </div>
+        <div style={{ color: "#3d3d60", fontSize: 11 }}>
+          {channel?.avatar} {channel?.name || job.channel_id}
+          {elapsed !== null && ` · ${elapsed}s elapsed`}
+          {startedAt && ` · started ${startedAt}`}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main page ────────────────────────────────────────────────────────
 export default function ReviewQueue() {
   const [jobs,    setJobs]    = useState([]);
@@ -248,7 +399,11 @@ export default function ReviewQueue() {
       });
       const data = await res.json();
       const relevant = (data.jobs || []).filter(
-        j => j.stage === "pending_review" || j.stage === "assembled" || j.stage === "approved"
+        j => j.stage === "pending_review" ||
+             j.stage === "assembled" ||
+             j.stage === "approved" ||
+             j.stage === "rendering" ||
+             j.stage === "draft_ready"
       );
       setJobs(relevant);
       setError("");
@@ -265,9 +420,12 @@ export default function ReviewQueue() {
     return () => clearInterval(interval);
   }, [fetchJobs]);
 
-  const pending  = jobs.filter(j => j.stage === "pending_review" || j.stage === "assembled");
-  const approved = jobs.filter(j => j.stage === "approved")
-                       .sort((a, b) => (b.approved_at || "").localeCompare(a.approved_at || ""));
+  const rendering   = jobs.filter(j => j.stage === "rendering");
+  const draftReady  = jobs.filter(j => j.stage === "draft_ready")
+                          .sort((a, b) => (b.render_completed_at || "").localeCompare(a.render_completed_at || ""));
+  const pending     = jobs.filter(j => j.stage === "pending_review" || j.stage === "assembled");
+  const approved    = jobs.filter(j => j.stage === "approved")
+                          .sort((a, b) => (b.approved_at || "").localeCompare(a.approved_at || ""));
 
   return (
     <div className="fade-in">
@@ -278,7 +436,7 @@ export default function ReviewQueue() {
         <div style={{ color: "#3d3d60", fontSize: 13, marginTop: 4 }}>
           {loading
             ? "Loading…"
-            : `${pending.length} pending · ${approved.length} approved`}
+            : `${rendering.length} rendering · ${draftReady.length} draft ready · ${pending.length} pending · ${approved.length} approved`}
         </div>
       </div>
 
@@ -292,6 +450,30 @@ export default function ReviewQueue() {
         </div>
       ) : (
         <>
+          {/* Rendering section — Lambda is working */}
+          {rendering.length > 0 && (
+            <>
+              <SectionLabel>Rendering · {rendering.length}</SectionLabel>
+              <div style={{ marginBottom: 32 }}>
+                {rendering.map(job => (
+                  <RenderingCard key={job.job_id} job={job} />
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Draft Ready section — download for CapCut polish */}
+          {draftReady.length > 0 && (
+            <>
+              <SectionLabel>Draft MP4 Ready for CapCut · {draftReady.length}</SectionLabel>
+              <div style={{ marginBottom: 32 }}>
+                {draftReady.map(job => (
+                  <RenderReadyCard key={job.job_id} job={job} />
+                ))}
+              </div>
+            </>
+          )}
+
           {/* Pending section */}
           <SectionLabel>Pending Review · {pending.length}</SectionLabel>
           {pending.length === 0 ? (

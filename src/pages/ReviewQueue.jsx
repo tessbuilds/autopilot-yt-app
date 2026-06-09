@@ -236,6 +236,8 @@ function ApprovedCard({ job }) {
 }
 
 // ── Render-ready card (draft MP4 from local FFmpeg, awaiting CapCut polish) ──
+// Handles both landscape (16:9, 480px wide) and portrait (9:16, 220px wide)
+// based on the orientation field on the job.
 function RenderReadyCard({ job }) {
   const [videoUrl, setVideoUrl] = useState(null);
   const [downloading, setDownloading] = useState(false);
@@ -253,7 +255,15 @@ function RenderReadyCard({ job }) {
     ? new Date(job.render_completed_at).toLocaleString()
     : "";
 
-  // Extract the S3 key from the draft_mp4_url (stored as s3://bucket/key)
+  // Orientation: prefer explicit field, fall back to channel_id (ch_005 = portrait)
+  const orientation = job.orientation
+    || (job.channel_id === "ch_005" ? "portrait" : "landscape");
+  const isPortrait = orientation === "portrait";
+
+  // Vertical previews are narrower so the card stays compact.
+  const videoMaxWidth = isPortrait ? 240 : 480;
+  const videoAspectRatio = isPortrait ? "9/16" : "16/9";
+
   const s3Key = (job.draft_mp4_url || "").replace(/^s3:\/\/[^/]+\//, "");
 
   useEffect(() => {
@@ -294,6 +304,12 @@ function RenderReadyCard({ job }) {
               fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 4,
               background: "#6366f118", color: "#a78bfa", border: "1px solid #6366f144",
             }}>🎬 DRAFT READY</span>
+            <span style={{
+              fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 4,
+              background: isPortrait ? "#f59e0b18" : "#10b98118",
+              color:      isPortrait ? "#f59e0b"   : "#10b981",
+              border:     `1px solid ${isPortrait ? "#f59e0b44" : "#10b98144"}`,
+            }}>{isPortrait ? "📱 9:16" : "🖥️ 16:9"}</span>
             <span style={{ color: "#e0e0ff", fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {job.topic || "Untitled"}
             </span>
@@ -309,14 +325,14 @@ function RenderReadyCard({ job }) {
         </div>
       </div>
 
-{videoUrl ? (
+      {videoUrl ? (
         <video controls src={videoUrl}
           style={{
             width: "100%",
-            maxWidth: 480,
+            maxWidth: videoMaxWidth,
             borderRadius: 10,
             background: "#000",
-            aspectRatio: "16/9",
+            aspectRatio: videoAspectRatio,
             marginBottom: 12,
             display: "block",
           }}
@@ -324,8 +340,8 @@ function RenderReadyCard({ job }) {
       ) : (
         <div style={{
           width: "100%",
-          maxWidth: 480,
-          aspectRatio: "16/9",
+          maxWidth: videoMaxWidth,
+          aspectRatio: videoAspectRatio,
           borderRadius: 10,
           background: "#000",
           display: "flex",
@@ -343,7 +359,11 @@ function RenderReadyCard({ job }) {
         onClick={handleDownload}
         disabled={downloading || !s3Key}
       >
-        {downloading ? <Spinner size={14} /> : "⬇️ Download Draft MP4 for CapCut"}
+        {downloading
+          ? <Spinner size={14} />
+          : isPortrait
+            ? "⬇️ Download Vertical Short for CapCut"
+            : "⬇️ Download Draft MP4 for CapCut"}
       </Button>
     </div>
   );

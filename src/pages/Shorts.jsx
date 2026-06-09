@@ -15,13 +15,13 @@ const VOICES = [
 ];
 
 const VOICE_DEFAULTS = {
-  'VR6AewLTigWG4xSOukaG': { stability: 0.35, similarity: 0.85, style: 0.60 }, // Arnold
-  'pqHfZKP75CvOlD17v9Eu': { stability: 0.80, similarity: 0.80, style: 0.20 }, // Eric
-  '21m00Tcm4TlvDq8ikWAM': { stability: 0.60, similarity: 0.80, style: 0.40 }, // Rachel
-  'onwK4e9ZLuTAKqWW03F9': { stability: 0.75, similarity: 0.82, style: 0.20 }, // Daniel
-  'IKne3meq5aSn9XLyUdCD': { stability: 0.65, similarity: 0.85, style: 0.55 }, // Charlie
-  'JBFqnCBsd6RMkjVDRZzb': { stability: 0.50, similarity: 0.82, style: 0.50 }, // George
-  'pNInz6obpgDQGcFmaJgB': { stability: 0.70, similarity: 0.85, style: 0.62 }, // Adam
+  'VR6AewLTigWG4xSOukaG': { stability: 0.35, similarity: 0.85, style: 0.60 },
+  'pqHfZKP75CvOlD17v9Eu': { stability: 0.80, similarity: 0.80, style: 0.20 },
+  '21m00Tcm4TlvDq8ikWAM': { stability: 0.60, similarity: 0.80, style: 0.40 },
+  'onwK4e9ZLuTAKqWW03F9': { stability: 0.75, similarity: 0.82, style: 0.20 },
+  'IKne3meq5aSn9XLyUdCD': { stability: 0.65, similarity: 0.85, style: 0.55 },
+  'JBFqnCBsd6RMkjVDRZzb': { stability: 0.50, similarity: 0.82, style: 0.50 },
+  'pNInz6obpgDQGcFmaJgB': { stability: 0.70, similarity: 0.85, style: 0.62 },
 };
 
 const SLIDER_LABELS = {
@@ -38,7 +38,6 @@ const VOICE_PRESETS = [
   { name: 'Viral Energy',   icon: '🔥', stability: 0.40, similarity: 0.82, style: 0.80, speed: 1.10 },
 ];
 
-// ── Pexels search (vertical) ─────────────────────────────────────────
 async function searchPexelsVertical(keyword, apiKey) {
   const res = await fetch(
     `https://api.pexels.com/videos/search?query=${encodeURIComponent(keyword)}&per_page=3&orientation=portrait&size=medium`,
@@ -49,7 +48,6 @@ async function searchPexelsVertical(keyword, apiKey) {
   const v = (data.videos || [])[0];
   if (!v) return null;
   const files = v.video_files || [];
-  // prefer 1080-tall files for vertical
   const tall = files.find(f => f.height >= 1080) || files[0];
   return tall?.link || null;
 }
@@ -66,7 +64,7 @@ async function api(path, opts = {}) {
 }
 
 export default function Shorts() {
-  const [mode,     setMode]     = useState("new");        // "new" | "from"
+  const [mode,     setMode]     = useState("new");
   const [topic,    setTopic]    = useState("");
   const [duration, setDuration]           = useState("45s");
   const [selectedVoice, setSelectedVoice] = useState(() => {
@@ -147,13 +145,12 @@ export default function Shorts() {
   const [visualsBusy,   setVisualsBusy]   = useState(false);
   const [assets,        setAssets]        = useState(null);
 
-  const [assembleStatus, setAssembleStatus] = useState("");
-  const [assembleBusy,   setAssembleBusy]   = useState(false);
-  const [videoUrl,       setVideoUrl]       = useState(null);
+  // Render state — fire-and-forget. Result lands in Review Queue.
+  const [renderStatus, setRenderStatus] = useState("");
+  const [renderError,  setRenderError]  = useState("");
 
   const [error, setError] = useState("");
 
-  // Load completed long-form jobs for "From Video" dropdown
   useEffect(() => {
     if (mode !== "from") return;
     let cancelled = false;
@@ -175,7 +172,7 @@ export default function Shorts() {
   const generateScript = async () => {
     setError(""); setScript(""); setScriptStatus("");
     setAudioReady(false); setVoiceStatus(""); setAssets(null);
-    setVisualsStatus(""); setVideoUrl(null); setAssembleStatus("");
+    setVisualsStatus(""); setRenderStatus(""); setRenderError("");
     setScriptBusy(true);
     try {
       let data;
@@ -206,7 +203,7 @@ export default function Shorts() {
     setScriptBusy(false);
   };
 
-  // ── Step 2: Generate voice (async, poll) ────────────────────────
+  // ── Step 2: Generate voice ──────────────────────────────────────
   const generateVoice = async () => {
     if (!jobId || !script) return;
     setError(""); setVoiceBusy(true); setVoiceStatus("🎙️ Starting voiceover…");
@@ -268,13 +265,12 @@ export default function Shorts() {
     setVoiceBusy(false);
   };
 
-  // ── Step 3: Generate visuals (vertical Pexels) ──────────────────
+  // ── Step 3: Generate vertical visuals ───────────────────────────
   const generateVisuals = async () => {
     if (!jobId || !script) return;
     setError(""); setVisualsBusy(true); setVisualsStatus("🧠 Analyzing script…");
     setAssets(null);
     try {
-      // Ask backend for keywords (channel-aware)
       const job = await api(`/api/autopilot/jobs/${jobId}`);
       const audioDur   = parseFloat(job.audio_duration || duration);
       const clipsNeeded = Math.max(6, Math.ceil(audioDur / 3) + 2);
@@ -328,46 +324,30 @@ export default function Shorts() {
     setVisualsBusy(false);
   };
 
-  // ── Step 4: Assemble (vertical 1080×1920) ───────────────────────
-  const assemble = async () => {
+  // ── Step 4: Render Draft MP4 via local FFmpeg Lambda ─────────────
+  // Fire-and-forget. API Gateway times out at 30s but Lambda runs ~2-4 min.
+  // Result lands in Review Queue as stage=draft_ready, orientation=portrait.
+  const renderDraft = async () => {
     if (!jobId) return;
-    setError(""); setAssembleBusy(true); setAssembleStatus("🎬 Queueing assembly…");
-    try {
-      await api("/api/autopilot/assemble", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ job_id: jobId }),
-      });
-    } catch (e) {
-      setError(e.message); setAssembleStatus(""); setAssembleBusy(false); return;
-    }
-    for (let i = 0; i < 25; i++) {
-      await new Promise(r => setTimeout(r, 10000));
-      setAssembleStatus(`🎬 Rendering vertical Short… (${(i + 1) * 10}s)`);
-      try {
-        const job = await api(`/api/autopilot/jobs/${jobId}`);
-        if (job.stage === "failed") {
-          setError(job.error || "Assembly failed."); setAssembleStatus(""); setAssembleBusy(false); return;
-        }
-        if (job.stage === "pending_review" || job.stage === "assembled") {
-          if (job.video_s3_key) {
-            const { url } = await api("/api/autopilot/presign", {
-              method:  "POST",
-              headers: { "Content-Type": "application/json" },
-              body:    JSON.stringify({ s3_key: job.video_s3_key }),
-            });
-            setVideoUrl(url);
-          }
-          setAssembleStatus("✅ Short assembled.");
-          setAssembleBusy(false);
-          return;
-        }
-      } catch { /* keep polling */ }
-    }
-    setError("Assembly timed out."); setAssembleStatus(""); setAssembleBusy(false);
-  };
+    setRenderStatus("🎬 Starting vertical render…");
+    setRenderError("");
 
-  const download = () => { if (videoUrl) window.open(videoUrl, "_blank"); };
+    fetch(`${API_BASE}/api/autopilot/render`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-app-key": API_KEY },
+      body: JSON.stringify({ job_id: jobId }),
+    }).catch(e => {
+      // Expected — API Gateway 30s vs Lambda ~2-4 min.
+      console.log("[render] POST returned/timed out:", e.message);
+    });
+
+    setTimeout(() => {
+      setRenderStatus(
+        `✅ Render queued for ${jobId}. ` +
+        `Check the Review Queue in ~2-3 minutes — your vertical Short will appear there.`
+      );
+    }, 2000);
+  };
 
   const handleApproveVoice    = () => setVoiceApproved(true);
   const handleRegenerateVoice = async () => {
@@ -376,8 +356,8 @@ export default function Shorts() {
     setAudioReady(false);
     setAssets(null);
     setVisualsStatus("");
-    setVideoUrl(null);
-    setAssembleStatus("");
+    setRenderStatus("");
+    setRenderError("");
     await generateVoice();
   };
 
@@ -389,11 +369,10 @@ export default function Shorts() {
           ⚡ Shorts Studio
         </h1>
         <div style={{ color: "#3d3d60", fontSize: 13, marginTop: 4 }}>
-          Vertical 1080×1920 · Charlie voice · 60-80 word punchy fact
+          Vertical 1080×1920 · Local FFmpeg render · 60-80 word punchy fact
         </div>
       </div>
 
-      {/* Channel lock badge — Shorts is always ch_005 */}
       <div style={{
         display: "inline-flex", alignItems: "center", gap: 8,
         background: "#08081e", border: "1px solid #2d1b6e",
@@ -403,7 +382,6 @@ export default function Shorts() {
         ⚡ Shorts — Facts That Hit Different
       </div>
 
-      {/* Voice selector */}
       <div style={{ marginBottom: 18, maxWidth: 320 }}>
         <SectionLabel>Voice</SectionLabel>
         <Select
@@ -414,7 +392,6 @@ export default function Shorts() {
         />
       </div>
 
-      {/* Voice settings sliders */}
       <div style={{ background: "#1a1a2e", borderRadius: 12, padding: 16, marginBottom: 18, border: "1px solid #333", maxWidth: 480 }}>
         <div style={{ color: "#aaa", fontSize: 13, marginBottom: 12 }}>🎙️ Voice Settings</div>
 
@@ -496,7 +473,6 @@ export default function Shorts() {
         )}
       </div>
 
-      {/* Mode tabs */}
       <div style={{ display: "flex", gap: 8, marginBottom: 22 }}>
         {[["new", "✍️ New Topic"], ["from", "♻️ From Video"]].map(([m, label]) => (
           <button key={m} onClick={() => setMode(m)} style={{
@@ -509,12 +485,11 @@ export default function Shorts() {
         ))}
       </div>
 
-      {/* Mode body */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 160px", gap: 12, marginBottom: 18 }}>
         {mode === "new" ? (
           <div>
             <SectionLabel>Topic</SectionLabel>
-            <Input value={topic} onChange={setTopic} placeholder="e.g. Tesla just spent two billion dollars and told nobody"
+            <Input value={topic} onChange={setTopic} placeholder="e.g. SpaceX wants 1.75 trillion. Morningstar says it's worth half that."
                    onKeyDown={e => e.key === "Enter" && generateScript()} />
           </div>
         ) : (
@@ -544,7 +519,6 @@ export default function Shorts() {
       )}
       {error && <div style={{ color: "#ef4444", fontSize: 12, marginBottom: 14 }}>{error}</div>}
 
-      {/* Script editor */}
       {script && (
         <div className="fade-in" style={{ marginBottom: 18 }}>
           <SectionLabel>Script (editable)</SectionLabel>
@@ -562,7 +536,6 @@ export default function Shorts() {
         </div>
       )}
 
-      {/* Voice button (always shown when script is ready) */}
       {script && (
         <div style={{ marginBottom: 14 }}>
           <Button variant="success" onClick={generateVoice}
@@ -573,7 +546,6 @@ export default function Shorts() {
         </div>
       )}
 
-      {/* Audio preview — appears after voice is ready */}
       {audioPreviewUrl && (
         <div className="fade-in" style={{
           background: "#08081e", border: "1px solid #2d1b6e",
@@ -625,42 +597,28 @@ export default function Shorts() {
         </div>
       )}
 
-      {/* Visuals + Assemble — appear only after voice is approved */}
       {voiceApproved && (
         <div className="fade-in" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
           <Button variant="warning" onClick={generateVisuals} disabled={visualsBusy} style={{ justifyContent: "center" }}>
-            {visualsBusy  ? <Spinner size={14} /> : assets   ? "✓ Visuals"   : "🎨 Generate Visuals"}
+            {visualsBusy ? <Spinner size={14} /> : assets ? "✓ Visuals" : "🎨 Generate Visuals"}
           </Button>
-          <Button variant="primary" onClick={assemble} disabled={assembleBusy || !assets} style={{ justifyContent: "center" }}>
-            {assembleBusy ? <Spinner size={14} /> : videoUrl ? "✓ Assembled" : "🎬 Assemble"}
+          <Button variant="primary" onClick={renderDraft} disabled={!assets} style={{ justifyContent: "center" }}>
+            {renderStatus.startsWith("✅") ? "✓ Render Queued" : "🎬 Render Vertical Short"}
           </Button>
         </div>
       )}
 
-      {/* Live status messages */}
-      {(voiceStatus || visualsStatus || assembleStatus) && (
+      {(voiceStatus || visualsStatus || renderStatus) && (
         <div style={{ background: "#08081e", border: "1px solid #12122a", borderRadius: 10, padding: "12px 16px", marginBottom: 14, fontSize: 12, color: "#a78bfa", lineHeight: 1.7 }}>
           {voiceStatus    && <div>{voiceStatus}</div>}
           {visualsStatus  && <div>{visualsStatus}</div>}
-          {assembleStatus && <div>{assembleStatus}</div>}
+          {renderStatus   && <div style={{ color: renderStatus.startsWith("✅") ? "#10b981" : "#a78bfa" }}>{renderStatus}</div>}
         </div>
       )}
 
-      {/* Vertical preview + download */}
-      {videoUrl && (
-        <div className="fade-in" style={{ background: "#08081e", border: "1px solid #10b98133", borderRadius: 14, padding: 20, display: "flex", gap: 20, alignItems: "flex-start" }}>
-          <video controls src={videoUrl}
-            style={{ width: 220, aspectRatio: "9/16", borderRadius: 10, background: "#000", flexShrink: 0 }}
-          />
-          <div style={{ flex: 1 }}>
-            <SectionLabel>✅ Short Ready</SectionLabel>
-            <div style={{ color: "#c4c4e0", fontSize: 13, marginBottom: 14 }}>
-              Vertical 1080×1920 · {duration} · Charlie
-            </div>
-            <Button variant="success" onClick={download} style={{ justifyContent: "center" }}>
-              ⬇️ Download MP4
-            </Button>
-          </div>
+      {renderError && (
+        <div style={{ color: "#ef4444", fontSize: 13, marginBottom: 14, textAlign: "center" }}>
+          {renderError}
         </div>
       )}
     </div>

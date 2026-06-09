@@ -226,6 +226,10 @@ export default function CreateVideo() {
   const [voiceStatus, setVoiceStatus]       = useState("");
   const [assembleStatus, setAssembleStatus] = useState("");
   const [assembleError, setAssembleError]   = useState("");
+  const [draftMp4Url, setDraftMp4Url]       = useState(null);
+  const [renderStatus, setRenderStatus]     = useState("");
+  const [renderError, setRenderError]       = useState("");
+  const [manualFetching, setManualFetching] = useState(false);
   const [scriptStatus, setScriptStatus]     = useState("");
   const [audioPreviewUrl, setAudioPreviewUrl] = useState(null);
 
@@ -568,6 +572,71 @@ export default function CreateVideo() {
     setAssembleError("Assembly timed out. Check the job details and Lambda logs.");
     setAssembleStatus("");
     setAssembling(false);
+  };
+
+  // ── Step 4 (NEW): Render Draft MP4 via local FFmpeg Lambda ────────
+  // Fire-and-forget. API Gateway has a 30s integration timeout but the
+  // Lambda runs ~4 min, so the POST will appear to "fail" in the browser
+  // even though the Lambda continues running. The result lands in the
+  // Review Queue as stage=draft_ready once complete.
+  const renderDraft = async () => {
+    setRenderStatus("🎬 Starting render…");
+    setRenderError("");
+    setDraftMp4Url(null);
+
+    // Fire the POST. We expect the browser-level timeout — that's fine,
+    // the Lambda keeps running in the background.
+    fetch(`${API_BASE}/api/autopilot/render`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-app-key": API_KEY },
+      body: JSON.stringify({ job_id: jobId }),
+    }).catch(e => {
+      // Expected — silently swallow. API Gateway 30s timeout vs Lambda ~4 min.
+      console.log("[render] POST returned/timed out:", e.message);
+    });
+
+    // Give the Lambda a moment to start, then confirm to the user.
+    setTimeout(() => {
+      setRenderStatus(
+        `✅ Render queued for ${jobId}. ` +
+        `Check the Review Queue in ~4 minutes — your draft MP4 will appear there.`
+      );
+    }, 2000);
+  };
+
+  // ── Manual fallback: fetch the rendered MP4 directly, bypassing polling.
+  // Useful when API Gateway times out the POST at 30s but the Lambda
+  // continues running and writes output.mp4 to S3.
+  const fetchDraftManually = async () => {
+    setManualFetching(true);
+    setRenderError("");
+    try {
+      const s3Key = `autopilot/jobs/${jobId}/output.mp4`;
+      const presign = await apiFetchJson(`/api/autopilot/presign`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", "x-app-key": API_KEY },
+        body:    JSON.stringify({ s3_key: s3Key }),
+      });
+      if (!presign.url) {
+        throw new Error("Presign returned no URL — render may not be complete yet.");
+      }
+      setDraftMp4Url(presign.url);
+      setRenderStatus("✅ Draft MP4 fetched manually — ready to download");
+
+      // Auto-trigger download
+      const a = document.createElement('a');
+      a.href = presign.url;
+      a.download = `draft-${jobId}.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (e) {
+      setRenderError(
+        `Manual fetch failed: ${e.message}. The render may still be in progress — wait a minute and try again.`
+      );
+    } finally {
+      setManualFetching(false);
+    }
   };
 
   const addToQueue = () => {
@@ -1002,17 +1071,17 @@ export default function CreateVideo() {
         </div>
       )}
 
-      {/* ── STEP 4: Assemble ── */}
+      {/* ── STEP 4: Render Draft MP4 (local FFmpeg) ── */}
       {step >= 3 && assets && audioUrl === "ready" && (
         <div className="fade-in" style={{ marginTop: 16, background: "#08081e", border: "1px solid #12122a", borderRadius: 14, padding: 20 }}>
-          <SectionLabel>Video Assembly — Shotstack Cloud Render</SectionLabel>
+          <SectionLabel>Video Render — Local FFmpeg</SectionLabel>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
             {[
-              `${Object.keys(assets).length} Pexels clips → Shotstack timeline`,
-              "Sync ElevenLabs voiceover",
-              "Burn subtitles (SRT)",
-              "Render via Shotstack API",
-              "Upload final MP4 to S3",
+              `${Object.keys(assets).length} Pexels clips → ordered timeline`,
+              "Trim or loop each clip to match audio length",
+              "Concat clips with hard cuts (1920×1080 @ 30fps)",
+              "Mix ElevenLabs voiceover at exact audio duration",
+              "Upload draft MP4 to S3 for CapCut polish",
             ].map(task => (
               <div key={task} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ fontSize: 14, color: "#10b981" }}>✓</span>
@@ -1023,24 +1092,84 @@ export default function CreateVideo() {
           <Button
             variant="success"
             style={{ width: "100%", justifyContent: "center" }}
-            onClick={assembleVideo}
+            onClick={renderDraft}
             disabled={assembling}
           >
-            {assembling ? <><Spinner size={14} /> Assembling… (~2 min)</> : "🎬 Assemble Video"}
+            {assembling
+              ? <><Spinner size={14} /> Rendering… (~4-5 min)</>
+              : draftMp4Url
+              ? "🔄 Re-render Draft MP4"
+              : "🎬 Render Draft MP4"}
           </Button>
           {assembling && (
             <div style={{ color: "#f59e0b", fontSize: 13, marginTop: 10, textAlign: "center" }}>
-              {assembleStatus || "Shotstack is rendering your video. Polling every 10 seconds…"}
+              {renderStatus || "Local FFmpeg Lambda is rendering. Polling every 10 seconds…"}
             </div>
           )}
-          {!assembling && assembleStatus && (
+          {!assembling && renderStatus && (
             <div style={{ color: "#10b981", fontSize: 13, marginTop: 10, textAlign: "center" }}>
-              {assembleStatus}
+              {renderStatus}
             </div>
           )}
-          {assembleError && (
+          {renderError && (
             <div style={{ color: "#ef4444", fontSize: 13, marginTop: 10, textAlign: "center" }}>
-              {assembleError}
+              {renderError}
+            </div>
+          )}
+
+          {/* Manual fetch fallback — for when polling fails but Lambda completed */}
+          <button
+            onClick={fetchDraftManually}
+            disabled={manualFetching}
+            style={{
+              background: "transparent",
+              border: "1px solid #6366f1",
+              borderRadius: 8,
+              padding: "10px 16px",
+              color: "#a78bfa",
+              cursor: manualFetching ? "wait" : "pointer",
+              fontSize: 12,
+              width: "100%",
+              marginTop: 10,
+              fontWeight: 600,
+            }}>
+            {manualFetching
+              ? "⏳ Fetching MP4 from S3…"
+              : "📥 Download MP4 Anyway (if render finished)"}
+          </button>
+
+          {/* Download button appears once draft is ready */}
+          {draftMp4Url && (
+            <div className="fade-in" style={{
+              background: "#08081e", border: "1px solid #2d1b6e",
+              borderRadius: 12, padding: 16, marginTop: 14,
+            }}>
+              <div style={{ color: "#a78bfa", fontSize: 12, marginBottom: 10, fontWeight: 600 }}>
+                📥 Draft MP4 ready — download and polish in CapCut:
+              </div>
+              <video controls src={draftMp4Url} style={{ width: "100%", borderRadius: 8, marginBottom: 10, background: "#000" }} />
+              <button
+                onClick={() => {
+                  const a = document.createElement('a');
+                  a.href = draftMp4Url;
+                  a.download = `draft-${jobId}.mp4`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                }}
+                style={{
+                  background: '#6366f1',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  padding: '12px 20px',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  width: '100%',
+                  fontSize: 14,
+                }}>
+                ⬇️ Download Draft MP4
+              </button>
             </div>
           )}
         </div>
